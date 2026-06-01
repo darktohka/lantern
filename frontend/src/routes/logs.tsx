@@ -161,7 +161,11 @@ export function LogsPage() {
                         {formatDateTime(log.started_at)}
                       </td>
                       <td className="py-3 pr-4">{log.account_name ?? "-"}</td>
-                      <td className="py-3 pr-4">Hoyoverse Daily Check-in</td>
+                      <td className="py-3 pr-4">
+                        {log.task_type === "ncore_daily_checkin"
+                          ? "nCore Daily Check-in"
+                          : "Hoyoverse Daily Check-in"}
+                      </td>
                       <td className="py-3 pr-4">
                         <Badge
                           variant={log.status === "success" ? "success" : "destructive"}

@@ -3,6 +3,7 @@ mod auth;
 mod db;
 mod hoyoverse;
 mod models;
+mod ncore;
 mod scheduler;
 mod state;
 mod timeutil;

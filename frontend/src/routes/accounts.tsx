@@ -265,7 +265,7 @@ export function AccountsPage() {
           <CardHeader>
             <CardTitle>{form.editingId ? "Edit account" : "Add account"}</CardTitle>
             <CardDescription>
-              Hoyoverse creates a daily check-in task at 00:00 UTC+8.
+              Hoyoverse: check-in at 00:00 UTC+8. nCore: check-in between 10:00-14:00 Hungarian time.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -399,7 +399,9 @@ export function AccountsPage() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 font-medium">
                             <CheckCircle2 className="h-4 w-4 text-primary" />
-                            Hoyoverse Daily Check-in
+                            {task.task_type === "ncore_daily_checkin"
+                              ? "nCore Daily Check-in"
+                              : "Hoyoverse Daily Check-in"}
                           </div>
                           <div className="mt-1 text-muted-foreground">
                             Last run: {formatDateTime(task.last_run_at)}

@@ -1,13 +1,14 @@
-use chrono::{DateTime, Duration, NaiveTime, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveTime, Utc};
 use rand::Rng;
 use sqlx::{FromRow, SqlitePool};
 use tokio::time::{Duration as TokioDuration, sleep};
 use tracing::{error, info, warn};
 
 use crate::{
-    hoyoverse,
+    hoyoverse, ncore,
     models::{
-        HoyoverseConfig, Service, TaskLogResponse, TASK_HOYOVERSE_DAILY_CHECKIN,
+        HoyoverseConfig, NcoreConfig, Service, TaskLogResponse, TaskOutcome,
+        TASK_HOYOVERSE_DAILY_CHECKIN, TASK_NCORE_DAILY_CHECKIN,
     },
     state::AppState,
     timeutil::{now, to_sql_timestamp},
@@ -62,10 +63,20 @@ pub async fn reconcile_account_tasks(
             .await?;
         }
         Service::Ncore => {
-            sqlx::query("DELETE FROM account_tasks WHERE account_id = ?1")
-                .bind(account_id)
-                .execute(pool)
-                .await?;
+            let timestamp = now();
+            sqlx::query(
+                r#"
+                INSERT OR IGNORE INTO account_tasks
+                    (account_id, task_type, enabled, next_run_at, created_at, updated_at)
+                VALUES (?1, ?2, 1, ?3, ?4, ?4)
+                "#,
+            )
+            .bind(account_id)
+            .bind(TASK_NCORE_DAILY_CHECKIN)
+            .bind(to_sql_timestamp(next_ncore_daily_run_from(timestamp)))
+            .bind(to_sql_timestamp(timestamp))
+            .execute(pool)
+            .await?;
         }
     }
 
@@ -114,7 +125,7 @@ async fn execute_and_log(
     task: &DueTaskRow,
     started_at: chrono::DateTime<Utc>,
 ) -> Result<TaskLogResponse, sqlx::Error> {
-    let outcome = run_task_by_type(http, task).await;
+    let outcome = run_task_by_type(http, pool, task).await;
     let finished_at = now();
     let duration_ms = (finished_at - started_at).num_milliseconds();
     let status = if outcome.success { "success" } else { "failed" };
@@ -178,6 +189,65 @@ fn with_hoyoverse_random_delay(base: DateTime<Utc>) -> DateTime<Utc> {
     base + Duration::seconds(delay_seconds)
 }
 
+fn hungarian_offset_now() -> i64 {
+    use chrono::Datelike;
+    let now = Utc::now();
+    let year = now.year();
+
+    let dst_start = last_sunday_of_month(year, 3).and_hms_opt(1, 0, 0).unwrap().and_utc();
+    let dst_end = last_sunday_of_month(year, 10).and_hms_opt(1, 0, 0).unwrap().and_utc();
+
+    if now >= dst_start && now < dst_end { 7200 } else { 3600 }
+}
+
+fn last_sunday_of_month(year: i32, month: u32) -> chrono::NaiveDate {
+    let mut day = if month == 2 {
+        if chrono::NaiveDate::from_ymd_opt(year, month, 29).is_some() { 29 } else { 28 }
+    } else if month == 4 || month == 6 || month == 9 || month == 11 {
+        30
+    } else {
+        31
+    };
+    loop {
+        if let Some(date) = chrono::NaiveDate::from_ymd_opt(year, month, day) {
+            if date.weekday() == chrono::Weekday::Sun {
+                return date;
+            }
+        }
+        day -= 1;
+    }
+}
+
+pub fn next_ncore_daily_run_from(after: DateTime<Utc>) -> DateTime<Utc> {
+    let offset = hungarian_offset_now();
+    let hu_now = after + Duration::seconds(offset);
+    let local_date = hu_now.date_naive();
+    let today_start_utc = local_date.and_time(chrono::NaiveTime::MIN).and_utc() - Duration::seconds(offset);
+    let mut base_utc = today_start_utc + Duration::hours(10);
+
+    if base_utc + Duration::seconds(60) <= after {
+        let tomorrow = local_date + Duration::days(1);
+        let tomorrow_start_utc = tomorrow.and_time(chrono::NaiveTime::MIN).and_utc() - Duration::seconds(offset);
+        base_utc = tomorrow_start_utc + Duration::hours(10);
+    }
+
+    with_ncore_random_delay(base_utc)
+}
+
+fn next_ncore_daily_run_next_day(after: DateTime<Utc>) -> DateTime<Utc> {
+    let offset = hungarian_offset_now();
+    let hu_now = after + Duration::seconds(offset);
+    let local_date = hu_now.date_naive() + Duration::days(1);
+    let tomorrow_start_utc = local_date.and_time(chrono::NaiveTime::MIN).and_utc() - Duration::seconds(offset);
+    let base_utc = tomorrow_start_utc + Duration::hours(10);
+    with_ncore_random_delay(base_utc)
+}
+
+fn with_ncore_random_delay(base: DateTime<Utc>) -> DateTime<Utc> {
+    let delay_seconds = rand::thread_rng().gen_range(0..=14400);
+    base + Duration::seconds(delay_seconds)
+}
+
 async fn run_due_tasks(state: &AppState) -> anyhow::Result<()> {
     let due_at = to_sql_timestamp(now());
     let tasks = sqlx::query_as::<_, DueTaskRow>(
@@ -214,6 +284,7 @@ async fn execute_task(state: &AppState, task: DueTaskRow) {
     let started_at = now();
     let next_run_at = match task.task_type.as_str() {
         TASK_HOYOVERSE_DAILY_CHECKIN => next_hoyoverse_daily_run_next_day(started_at),
+        TASK_NCORE_DAILY_CHECKIN => next_ncore_daily_run_next_day(started_at),
         other => {
             warn!(
                 task_type = other,
@@ -255,11 +326,15 @@ async fn execute_task(state: &AppState, task: DueTaskRow) {
     }
 }
 
-async fn run_task_by_type(http: &reqwest::Client, task: &DueTaskRow) -> hoyoverse::TaskOutcome {
+async fn run_task_by_type(
+    http: &reqwest::Client,
+    pool: &SqlitePool,
+    task: &DueTaskRow,
+) -> TaskOutcome {
     match task.task_type.as_str() {
         TASK_HOYOVERSE_DAILY_CHECKIN => {
             if task.service != Service::Hoyoverse.as_str() {
-                return hoyoverse::TaskOutcome {
+                return TaskOutcome {
                     success: false,
                     message: format!(
                         "task {} cannot run for service {}",
@@ -272,13 +347,35 @@ async fn run_task_by_type(http: &reqwest::Client, task: &DueTaskRow) -> hoyovers
                 Ok(config) => {
                     hoyoverse::run_daily_checkin(http, &task.account_name, &config).await
                 }
-                Err(err) => hoyoverse::TaskOutcome {
+                Err(err) => TaskOutcome {
                     success: false,
                     message: format!("invalid Hoyoverse account configuration: {}", err),
                 },
             }
         }
-        other => hoyoverse::TaskOutcome {
+        TASK_NCORE_DAILY_CHECKIN => {
+            if task.service != Service::Ncore.as_str() {
+                return TaskOutcome {
+                    success: false,
+                    message: format!(
+                        "task {} cannot run for service {}",
+                        task.task_type, task.service
+                    ),
+                };
+            }
+
+            match serde_json::from_str::<NcoreConfig>(&task.config_json) {
+                Ok(config) => {
+                    ncore::run_daily_checkin(pool, http, &task.account_name, task.account_id, &config)
+                        .await
+                }
+                Err(err) => TaskOutcome {
+                    success: false,
+                    message: format!("invalid nCore account configuration: {}", err),
+                },
+            }
+        }
+        other => TaskOutcome {
             success: false,
             message: format!("unknown task type {}", other),
         },

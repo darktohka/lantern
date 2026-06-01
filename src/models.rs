@@ -2,6 +2,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const TASK_HOYOVERSE_DAILY_CHECKIN: &str = "hoyoverse_daily_checkin";
+pub const TASK_NCORE_DAILY_CHECKIN: &str = "ncore_daily_checkin";
+
+#[derive(Debug)]
+pub struct TaskOutcome {
+    pub success: bool,
+    pub message: String,
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -46,10 +53,15 @@ pub struct HoyoverseConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct NcoreConfig {
     pub username: String,
     pub password: String,
+    #[serde(default = "default_ncore_url")]
+    pub base_url: String,
+}
+
+fn default_ncore_url() -> String {
+    "https://ncore.pro".to_string()
 }
 
 #[derive(Debug, Deserialize)]

@@ -4,7 +4,7 @@ use reqwest::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::models::HoyoverseConfig;
+use crate::models::{HoyoverseConfig, TaskOutcome};
 
 pub struct Game {
     name: &'static str,
@@ -37,12 +37,6 @@ const GAMES: &[Game] = &[
         rpc_sign_game: Some("zzz"),
     },
 ];
-
-#[derive(Debug)]
-pub struct TaskOutcome {
-    pub success: bool,
-    pub message: String,
-}
 
 #[derive(Serialize)]
 struct SignRequest {

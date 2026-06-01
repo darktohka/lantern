@@ -61,6 +61,7 @@ pub async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
             service TEXT NOT NULL,
             enabled INTEGER NOT NULL DEFAULT 1,
             config_json TEXT NOT NULL,
+            cookies_json TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -103,8 +104,13 @@ pub async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
         "#,
     )
     .execute(pool)
-    .await
-    .context("failed to migrate sqlite database")?;
+    .await?;
+
+    let _ = sqlx::raw_sql(
+        "ALTER TABLE accounts ADD COLUMN cookies_json TEXT NOT NULL DEFAULT '{}'",
+    )
+    .execute(pool)
+    .await;
 
     Ok(())
 }
