@@ -1,12 +1,26 @@
 [package]
-name = "hoyo-checkin-rs"
+name = "lantern"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-reqwest = { version = "0", features = ["json", "rustls", "hickory-dns", "blocking", "query"], default-features = false }
+anyhow = "1"
+argon2 = "0.5"
+axum = { version = "0.8", features = ["macros"] }
+base64 = "0.22"
+chrono = { version = "0.4", features = ["clock", "serde"] }
+clap = { version = "4.5", features = ["derive", "env"] }
+rand = "0.8"
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "hickory-dns"], default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "macros"], default-features = false }
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 [profile.release-lto]
 inherits = "release"
