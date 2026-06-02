@@ -7,6 +7,7 @@ mod ncore;
 mod scheduler;
 mod state;
 mod timeutil;
+mod torrent;
 
 use anyhow::Context;
 use clap::{Args, Parser, Subcommand};
@@ -40,6 +41,9 @@ struct ServeArgs {
 
     #[arg(long, env = "LANTERN_STATIC_DIR", default_value = "frontend/dist")]
     static_dir: String,
+
+    #[arg(long, env = "LANTERN_TORRENT_DIR", default_value = "/data/torrents")]
+    torrent_dir: String,
 }
 
 #[derive(Args, Debug)]
@@ -87,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
     let command = cli.command.unwrap_or(Command::Serve(ServeArgs {
         bind: "0.0.0.0:3000".to_string(),
         static_dir: "frontend/dist".to_string(),
+        torrent_dir: "/data/torrents".to_string(),
     }));
 
     let pool = db::connect(&cli.database_url)
@@ -95,7 +100,7 @@ async fn main() -> anyhow::Result<()> {
     db::migrate(&pool).await?;
 
     match command {
-        Command::Serve(args) => api::serve(pool, args.bind, args.static_dir).await,
+        Command::Serve(args) => api::serve(pool, args.bind, args.static_dir, args.torrent_dir).await,
         Command::User(args) => match args.command {
             UserCommand::Create { username, password } => {
                 let user = auth::create_user(&pool, &username, &password).await?;

@@ -5,7 +5,7 @@ use axum::{
     extract::{FromRef, FromRequestParts, Path, Query, State},
     http::{HeaderMap, StatusCode, header::AUTHORIZATION, request::Parts},
     response::{IntoResponse, Response},
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -28,13 +28,14 @@ use crate::{
     scheduler,
     state::AppState,
     timeutil::{now, to_sql_timestamp},
+    torrent::{TorrentResponse, self},
 };
 
-pub async fn serve(db: sqlx::SqlitePool, bind: String, static_dir: String) -> anyhow::Result<()> {
-    let state = AppState {
-        db,
-        http: reqwest::Client::new(),
-    };
+pub async fn serve(db: sqlx::SqlitePool, bind: String, static_dir: String, torrent_dir: String) -> anyhow::Result<()> {
+    let http = reqwest::Client::new();
+    let torrent_dir = std::path::PathBuf::from(torrent_dir);
+    tokio::fs::create_dir_all(&torrent_dir).await?;
+    let state = AppState::new(db, http, torrent_dir);
 
     let api = Router::new()
         .route("/health", get(health))
@@ -47,7 +48,9 @@ pub async fn serve(db: sqlx::SqlitePool, bind: String, static_dir: String) -> an
         .route("/invites", get(list_invites).post(create_invite))
         .route("/tasks", get(list_tasks))
         .route("/tasks/{id}/run", post(run_task))
-        .route("/task-logs", get(list_task_logs));
+        .route("/task-logs", get(list_task_logs))
+        .route("/torrents", get(list_torrents))
+        .route("/torrents/{id}", delete(delete_torrent));
 
     let static_path = PathBuf::from(static_dir);
     let index_path = static_path.join("index.html");
@@ -65,6 +68,11 @@ pub async fn serve(db: sqlx::SqlitePool, bind: String, static_dir: String) -> an
         scheduler::run(scheduler_state).await;
     });
 
+    let torrent_keepalive = state.torrents.clone();
+    let torrent_handle = tokio::spawn(async move {
+        torrent::run_keepalive(torrent_keepalive).await;
+    });
+
     let listener = TcpListener::bind(&bind).await?;
     let local_addr = listener.local_addr()?;
     info!(%local_addr, "Lantern is listening");
@@ -74,6 +82,7 @@ pub async fn serve(db: sqlx::SqlitePool, bind: String, static_dir: String) -> an
         .await?;
 
     scheduler_handle.abort();
+    torrent_handle.abort();
     Ok(())
 }
 
@@ -669,6 +678,143 @@ async fn load_tasks(db: &sqlx::SqlitePool, user_id: i64) -> Result<Vec<TaskRespo
     .collect();
 
     Ok(tasks)
+}
+
+#[derive(Debug, Deserialize)]
+struct TorrentsQuery {
+    account_id: Option<i64>,
+}
+
+async fn list_torrents(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Query(query): Query<TorrentsQuery>,
+) -> Result<Json<Vec<TorrentResponse>>, ApiError> {
+    let account_ids: Vec<i64> = if let Some(account_id) = query.account_id {
+        let owner: (i64,) = sqlx::query_as(
+            "SELECT user_id FROM accounts WHERE id = ?1",
+        )
+        .bind(account_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+        if owner.0 != user.id {
+            return Err(ApiError::NotFound);
+        }
+        vec![account_id]
+    } else {
+        sqlx::query_as::<_, (i64,)>(
+            "SELECT id FROM accounts WHERE user_id = ?1 AND service = 'ncore'",
+        )
+        .bind(user.id)
+        .fetch_all(&state.db)
+        .await?
+        .into_iter()
+        .map(|r| r.0)
+        .collect()
+    };
+
+    let mut torrents = Vec::new();
+    for account_id in account_ids {
+        let rows = sqlx::query_as::<_, crate::torrent::NcoreTorrentRow>(
+            r#"
+            SELECT * FROM ncore_torrents WHERE account_id = ?1 ORDER BY created_at DESC
+            "#,
+        )
+        .bind(account_id)
+        .fetch_all(&state.db)
+        .await?;
+
+        let account_name: String = sqlx::query_scalar(
+            "SELECT name FROM accounts WHERE id = ?1",
+        )
+        .bind(account_id)
+        .fetch_optional(&state.db)
+        .await?
+        .unwrap_or_default();
+
+        let session_handle = {
+            let guard = state.torrents.session.lock().await;
+            guard.clone()
+        };
+        for row in rows {
+            let (progress, download_rate, upload_rate, total_download, total_upload) =
+                if let Some(ref info_hash) = row.info_hash {
+                    if !info_hash.is_empty() {
+                        if let Ok(hash) = irontide::prelude::Id20::from_hex(info_hash) {
+                            if let Some(ref handle) = session_handle {
+                                if let Ok(stats) = handle.torrent_stats(hash).await {
+                                    (
+                                        f64::from(stats.progress),
+                                        stats.download_payload_rate,
+                                        stats.upload_payload_rate,
+                                        stats.all_time_download,
+                                        stats.all_time_upload,
+                                    )
+                                } else {
+                                    (0.0, 0, 0, 0, 0)
+                                }
+                            } else {
+                                (0.0, 0, 0, 0, 0)
+                            }
+                        } else {
+                            (0.0, 0, 0, 0, 0)
+                        }
+                    } else {
+                        (0.0, 0, 0, 0, 0)
+                    }
+                } else {
+                    (0.0, 0, 0, 0, 0)
+                };
+
+            torrents.push(TorrentResponse {
+                id: row.id,
+                account_id: row.account_id,
+                account_name: account_name.clone(),
+                ncore_id: row.ncore_id,
+                info_hash: row.info_hash,
+                name: row.name,
+                status: row.status,
+                hnr_timespent: row.hnr_timespent,
+                hnr_seed: row.hnr_seed,
+                progress,
+                download_rate,
+                upload_rate,
+                total_download,
+                total_upload,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+            });
+        }
+    }
+
+    Ok(Json(torrents))
+}
+
+async fn delete_torrent(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, ApiError> {
+    let row = sqlx::query_as::<_, (i64, i64)>(
+        r#"
+        SELECT t.id, t.account_id
+        FROM ncore_torrents t
+        JOIN accounts a ON a.id = t.account_id
+        WHERE t.id = ?1 AND a.user_id = ?2
+        "#,
+    )
+    .bind(id)
+    .bind(user.id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+
+    torrent::remove_torrent(&state.torrents, row.0, row.1)
+        .await
+        .map_err(|err| ApiError::Internal(err.into()))?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {

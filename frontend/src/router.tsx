@@ -17,6 +17,7 @@ import { InvitesPage } from "./routes/invites";
 import { LoginPage } from "./routes/login";
 import { LogsPage } from "./routes/logs";
 import { RegisterPage } from "./routes/register";
+import { TorrentsPage } from "./routes/torrents";
 
 function AppShell() {
   const { user, logout } = useAuth();
@@ -37,6 +38,7 @@ function AppShell() {
             </Link>
             <nav className="flex flex-1 items-center gap-1 overflow-x-auto px-2">
               <NavLink to="/accounts">Accounts</NavLink>
+              <NavLink to="/torrents">Torrents</NavLink>
               <NavLink to="/invites">Invites</NavLink>
               <NavLink to="/logs">Logs</NavLink>
             </nav>
@@ -117,6 +119,16 @@ const accountsRoute = createRoute({
   ),
 });
 
+const torrentsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/torrents",
+  component: () => (
+    <Protected>
+      <TorrentsPage />
+    </Protected>
+  ),
+});
+
 const invitesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/invites",
@@ -142,6 +154,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   registerRoute,
   accountsRoute,
+  torrentsRoute,
   invitesRoute,
   logsRoute,
 ]);

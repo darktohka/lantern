@@ -11,5 +11,6 @@ services:
       - LANTERN_BIND=0.0.0.0:3000
       - LANTERN_STATIC_DIR=/static
       - LANTERN_DATABASE_URL=sqlite:///data/lantern.db
+      - LANTERN_TORRENT_DIR=/data/torrents
       - RUST_LOG=lantern=info,tower_http=info
 

@@ -112,5 +112,38 @@ pub async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
     .execute(pool)
     .await;
 
+    sqlx::raw_sql(
+        r#"
+        CREATE TABLE IF NOT EXISTS ncore_torrents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+            ncore_id TEXT NOT NULL,
+            info_hash TEXT,
+            name TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            hnr_timespent TEXT,
+            hnr_seed TEXT,
+            download_url TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_ncore_torrents_ncore_id
+            ON ncore_torrents(account_id, ncore_id);
+
+        CREATE TABLE IF NOT EXISTS ncore_blacklist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+            info_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_ncore_blacklist_hash
+            ON ncore_blacklist(account_id, info_hash);
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
     Ok(())
 }

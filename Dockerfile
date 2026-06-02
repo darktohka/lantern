@@ -9,18 +9,14 @@ RUN bun run build
 
 FROM rustlang/rust:nightly-alpine AS backend-builder
 WORKDIR /app
-RUN apk add --no-cache ca-certificates musl-dev pkgconfig
+RUN apk add --no-cache ca-certificates musl-dev pkgconfig openssl-dev openssl-libs-static
 
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir src \
-    && printf 'fn main() {}\n' > src/main.rs \
-    && cargo build --release \
-    && rm -rf src
-
+RUN mkdir -p src && echo "fn main() {}" > src/main.rs
+RUN cargo build --release
 COPY src ./src
-RUN touch src/main.rs \
-    && cargo rustc --release -- -C target-feature=+crt-static \
-    && mkdir -p /data
+RUN touch src/main.rs && cargo build --release \
+    && mkdir -p /data/torrents
 
 FROM scratch AS runtime
 COPY --from=backend-builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
