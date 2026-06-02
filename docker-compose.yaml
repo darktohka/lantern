@@ -1,6 +1,9 @@
 services:
   lantern:
-    build: .
+    build:
+      context: .
+      args:
+        PROFILE: release-lto
     container_name: lantern
     restart: unless-stopped
     ports:

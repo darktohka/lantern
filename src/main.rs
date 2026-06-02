@@ -4,6 +4,7 @@ mod db;
 mod hoyoverse;
 mod models;
 mod ncore;
+mod notifier;
 mod scheduler;
 mod state;
 mod timeutil;

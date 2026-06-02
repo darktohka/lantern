@@ -401,7 +401,9 @@ export function AccountsPage() {
                             <CheckCircle2 className="h-4 w-4 text-primary" />
                             {task.task_type === "ncore_daily_checkin"
                               ? "nCore Daily Check-in"
-                              : "Hoyoverse Daily Check-in"}
+                              : task.task_type === "ncore_hitnrun_check"
+                                ? "nCore Torrent Refresh"
+                                : "Hoyoverse Daily Check-in"}
                           </div>
                           <div className="mt-1 text-muted-foreground">
                             Last run: {formatDateTime(task.last_run_at)}

@@ -164,7 +164,9 @@ export function LogsPage() {
                       <td className="py-3 pr-4">
                         {log.task_type === "ncore_daily_checkin"
                           ? "nCore Daily Check-in"
-                          : "Hoyoverse Daily Check-in"}
+                          : log.task_type === "ncore_hitnrun_check"
+                            ? "nCore Torrent Refresh"
+                            : "Hoyoverse Daily Check-in"}
                       </td>
                       <td className="py-3 pr-4">
                         <Badge

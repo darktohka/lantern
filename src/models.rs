@@ -149,6 +149,20 @@ pub struct PaginatedLogsResponse {
     pub items: Vec<TaskLogResponse>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct NtfyAlertResponse {
+    pub id: i64,
+    pub name: String,
+    pub topic: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateNtfyAlertRequest {
+    pub name: String,
+    pub topic: String,
+}
+
 pub fn validate_account_config(service: Service, config: Value) -> Result<Value, String> {
     match service {
         Service::Hoyoverse => {

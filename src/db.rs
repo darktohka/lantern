@@ -140,6 +140,17 @@ pub async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
 
         CREATE UNIQUE INDEX IF NOT EXISTS idx_ncore_blacklist_hash
             ON ncore_blacklist(account_id, info_hash);
+
+        CREATE TABLE IF NOT EXISTS ntfy_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ntfy_alerts_user_id
+            ON ntfy_alerts(user_id);
         "#,
     )
     .execute(pool)

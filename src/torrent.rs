@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use irontide::prelude::*;
+use rand::Rng;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use sqlx::SqlitePool;
@@ -12,7 +13,8 @@ use tracing::{error, info, warn};
 use crate::models::NcoreConfig;
 use crate::timeutil::{now, to_sql_timestamp};
 
-const HITNRUN_INTERVAL: Duration = Duration::from_secs(3600);
+const HITNRUN_INTERVAL: Duration = Duration::from_secs(12 * 3600);
+const HITNRUN_JITTER: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Clone)]
 pub struct TorrentKeepalive {
@@ -68,7 +70,8 @@ pub async fn run_keepalive(k: TorrentKeepalive) {
             if let Err(err) = hitnrun_tick(&hitnrun_k).await {
                 error!(error = %err, "hitnrun tick failed");
             }
-            sleep(HITNRUN_INTERVAL).await;
+            let jitter = rand::thread_rng().gen_range(Duration::ZERO..=HITNRUN_JITTER);
+            sleep(HITNRUN_INTERVAL + jitter).await;
         }
     });
 
@@ -111,28 +114,39 @@ async fn process_account(
     account_name: &str,
     config: &NcoreConfig,
 ) -> anyhow::Result<()> {
-    let started_at = now();
-
     let base_url = config.base_url.trim_end_matches('/');
     let cookies = login(base_url, &config.username, &config.password).await?;
-    let torrents = fetch_hitnrun(&k.http, base_url, &cookies).await?;
+    process_hitnrun_torrents(&k.db, &k.http, base_url, &cookies, account_id, user_id, account_name).await
+}
+
+pub(crate) async fn process_hitnrun_torrents(
+    db: &SqlitePool,
+    http: &Client,
+    base_url: &str,
+    cookies: &str,
+    account_id: i64,
+    user_id: i64,
+    account_name: &str,
+) -> anyhow::Result<()> {
+    let started_at = now();
+    let torrents = fetch_hitnrun(http, base_url, cookies).await?;
 
     let mut added = Vec::new();
     let mut completed = Vec::new();
 
-    for ncore_torrent in torrents {
-        let ncore_id = ncore_torrent.ncore_id.clone();
-        let hnr_timespent = ncore_torrent.hnr_timespent.clone();
-        let hnr_seed = ncore_torrent.hnr_seed.clone();
-        let name = ncore_torrent.name.clone();
-        let download_url = ncore_torrent.download_url.clone();
+    for ncore_torrent in &torrents {
+        let ncore_id = &ncore_torrent.ncore_id;
+        let hnr_timespent = &ncore_torrent.hnr_timespent;
+        let hnr_seed = &ncore_torrent.hnr_seed;
+        let name = &ncore_torrent.name;
+        let download_url = &ncore_torrent.download_url;
 
         let blacklisted = sqlx::query_as::<_, (i64,)>(
             "SELECT 1 FROM ncore_blacklist b JOIN ncore_torrents t ON t.info_hash = b.info_hash WHERE b.account_id = ?1 AND t.ncore_id = ?2",
         )
         .bind(account_id)
-        .bind(&ncore_id)
-        .fetch_optional(&k.db)
+        .bind(ncore_id)
+        .fetch_optional(db)
         .await?.is_some();
 
         if blacklisted {
@@ -143,15 +157,15 @@ async fn process_account(
             "SELECT status FROM ncore_torrents WHERE account_id = ?1 AND ncore_id = ?2",
         )
         .bind(account_id)
-        .bind(&ncore_id)
-        .fetch_optional(&k.db)
+        .bind(ncore_id)
+        .fetch_optional(db)
         .await?;
 
         match existing {
             None => {
-                if let Some(ref seed) = hnr_seed {
+                if let Some(ref seed) = *hnr_seed {
                     if seed == "Stopped" {
-                        if let Some(ref timespent) = hnr_timespent {
+                        if let Some(ref timespent) = *hnr_timespent {
                             if timespent != "-" {
                                 info!(account_name, ncore_id, name, "new stopped torrent with remaining time, queueing");
                                 let now_ts = to_sql_timestamp(now());
@@ -163,13 +177,13 @@ async fn process_account(
                                     "#,
                                 )
                                 .bind(account_id)
-                                .bind(&ncore_id)
-                                .bind(&name)
-                                .bind(&hnr_timespent)
-                                .bind(&hnr_seed)
-                                .bind(&download_url)
+                                .bind(ncore_id)
+                                .bind(name)
+                                .bind(hnr_timespent)
+                                .bind(hnr_seed)
+                                .bind(download_url)
                                 .bind(&now_ts)
-                                .execute(&k.db)
+                                .execute(db)
                                 .await?;
                                 added.push(format!("#{} {}", ncore_id, name));
                             }
@@ -184,24 +198,24 @@ async fn process_account(
                     sqlx::query(
                         "UPDATE ncore_torrents SET status = 'complete', hnr_timespent = ?1, hnr_seed = ?2, updated_at = ?3 WHERE account_id = ?4 AND ncore_id = ?5",
                     )
-                    .bind(&hnr_timespent)
-                    .bind(&hnr_seed)
+                    .bind(hnr_timespent)
+                    .bind(hnr_seed)
                     .bind(&now_ts)
                     .bind(account_id)
-                    .bind(&ncore_id)
-                    .execute(&k.db)
+                    .bind(ncore_id)
+                    .execute(db)
                     .await?;
                     completed.push(format!("#{} {}", ncore_id, name));
                 } else if status == "pending" || status == "downloading" || status == "seeding" {
                     sqlx::query(
                         "UPDATE ncore_torrents SET hnr_timespent = ?1, hnr_seed = ?2, updated_at = ?3 WHERE account_id = ?4 AND ncore_id = ?5",
                     )
-                    .bind(&hnr_timespent)
-                    .bind(&hnr_seed)
+                    .bind(hnr_timespent)
+                    .bind(hnr_seed)
                     .bind(&now_ts)
                     .bind(account_id)
-                    .bind(&ncore_id)
-                    .execute(&k.db)
+                    .bind(ncore_id)
+                    .execute(db)
                     .await?;
                 }
             }
@@ -238,13 +252,13 @@ async fn process_account(
     .bind(to_sql_timestamp(finished_at))
     .bind(duration_ms)
     .bind(&message)
-    .execute(&k.db)
+    .execute(db)
     .await?;
 
     Ok(())
 }
 
-async fn fetch_hitnrun(
+pub(crate) async fn fetch_hitnrun(
     http: &Client,
     base_url: &str,
     cookies: &str,
@@ -264,15 +278,15 @@ async fn fetch_hitnrun(
 }
 
 #[derive(Debug)]
-struct NcoreHitnrunTorrent {
-    ncore_id: String,
-    name: String,
-    hnr_timespent: Option<String>,
-    hnr_seed: Option<String>,
-    download_url: String,
+pub(crate) struct NcoreHitnrunTorrent {
+    pub(crate) ncore_id: String,
+    pub(crate) name: String,
+    pub(crate) hnr_timespent: Option<String>,
+    pub(crate) hnr_seed: Option<String>,
+    pub(crate) download_url: String,
 }
 
-fn parse_hitnrun_html(html: &str) -> anyhow::Result<Vec<NcoreHitnrunTorrent>> {
+pub(crate) fn parse_hitnrun_html(html: &str) -> anyhow::Result<Vec<NcoreHitnrunTorrent>> {
     let document = Html::parse_document(html);
     let row_selector = Selector::parse(".hnr_all, .hnr_all2")
         .map_err(|e| anyhow::anyhow!("invalid selector: {}", e))?;
@@ -659,6 +673,14 @@ pub async fn remove_torrent(
     .await?
     .ok_or_else(|| anyhow::anyhow!("torrent not found"))?;
 
+    let account_name: String = sqlx::query_scalar(
+        "SELECT name FROM accounts WHERE id = ?1",
+    )
+    .bind(account_id)
+    .fetch_optional(&k.db)
+    .await?
+    .unwrap_or_default();
+
     let info_hash = torrent.info_hash.clone().unwrap_or_default();
     if !info_hash.is_empty() {
         let handle = { k.session.lock().await.clone() };
@@ -667,9 +689,9 @@ pub async fn remove_torrent(
                 let stats = handle.torrent_stats(hash).await.ok();
                 let is_seeding = stats.as_ref().map(|s| s.is_seeding).unwrap_or(false);
                 match handle.remove_torrent_with_files(hash).await {
-                    Ok(_) => info!(info_hash, "torrent removed with files"),
+                    Ok(_) => info!(info_hash, "torrent removed with files (via session)"),
                     Err(err) => {
-                        warn!(info_hash, error = %err, "failed to remove torrent from irontide, removing from db anyway")
+                        warn!(info_hash, error = %err, "failed to remove torrent from irontide, removing files manually")
                     }
                 }
                 if is_seeding {
@@ -681,6 +703,17 @@ pub async fn remove_torrent(
                 }
             }
         }
+    }
+
+    let torrent_dir = k.output_dir.join(&account_name).join(&torrent.name);
+    if torrent_dir.exists() {
+        tokio::fs::remove_dir_all(&torrent_dir).await?;
+        info!(path = %torrent_dir.display(), "removed torrent files from disk");
+    }
+
+    let cache_path = k.output_dir.join(".torrent-cache").join(format!("{}.torrent", torrent.ncore_id));
+    if cache_path.exists() {
+        tokio::fs::remove_file(&cache_path).await?;
     }
 
     sqlx::query("DELETE FROM ncore_torrents WHERE id = ?1")

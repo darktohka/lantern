@@ -1,4 +1,4 @@
-import { Copy, Plus, RefreshCw, Ticket } from "lucide-react";
+import { Copy, Plus, RefreshCw, Ticket, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Badge } from "../components/ui/badge";
@@ -68,6 +68,21 @@ export function InvitesPage() {
     await navigator.clipboard.writeText(code);
   }
 
+  async function deleteInvite(invite: Invite) {
+    if (!token) return;
+    if (!window.confirm(`Delete invite code "${invite.code}"?`)) return;
+
+    setError(null);
+    try {
+      await apiFetch<void>(`/api/invites/${invite.id}`, token, {
+        method: "DELETE",
+      });
+      setInvites((current) => current.filter((i) => i.id !== invite.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete invite");
+    }
+  }
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -124,7 +139,7 @@ export function InvitesPage() {
                     <th className="py-3 pr-4 font-medium">Status</th>
                     <th className="py-3 pr-4 font-medium">Created</th>
                     <th className="py-3 pr-4 font-medium">Redeemed by</th>
-                    <th className="py-3 text-right font-medium">Copy</th>
+                    <th className="py-3 text-right font-medium"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -145,14 +160,26 @@ export function InvitesPage() {
                         {invite.redeemed_by_username ?? "-"}
                       </td>
                       <td className="py-3 text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => void copyInvite(invite.code)}
-                        >
-                          <Copy className="h-4 w-4" />
-                          <span className="sr-only">Copy</span>
-                        </Button>
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => void copyInvite(invite.code)}
+                          >
+                            <Copy className="h-4 w-4" />
+                            <span className="sr-only">Copy</span>
+                          </Button>
+                          {!invite.redeemed_at ? (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => void deleteInvite(invite)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span className="sr-only">Delete</span>
+                            </Button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}

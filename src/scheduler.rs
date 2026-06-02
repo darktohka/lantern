@@ -5,7 +5,7 @@ use tokio::time::{Duration as TokioDuration, sleep};
 use tracing::{error, info, warn};
 
 use crate::{
-    hoyoverse, ncore,
+    hoyoverse, ncore, notifier,
     models::{
         HoyoverseConfig, NcoreConfig, Service, TaskLogResponse, TaskOutcome,
         TASK_HOYOVERSE_DAILY_CHECKIN, TASK_NCORE_DAILY_CHECKIN,
@@ -129,6 +129,15 @@ async fn execute_and_log(
     let finished_at = now();
     let duration_ms = (finished_at - started_at).num_milliseconds();
     let status = if outcome.success { "success" } else { "failed" };
+
+    if !outcome.success {
+        let title = format!("Check-in failed: {}", task.account_name);
+        let message = format!(
+            "[{}] {} - {}",
+            task.task_type, task.account_name, outcome.message
+        );
+        notifier::send_ntfy_alerts(pool, http, task.user_id, &title, &message).await;
+    }
 
     let result = sqlx::query(
         r#"
@@ -366,7 +375,7 @@ async fn run_task_by_type(
 
             match serde_json::from_str::<NcoreConfig>(&task.config_json) {
                 Ok(config) => {
-                    ncore::run_daily_checkin(pool, http, &task.account_name, task.account_id, &config)
+                    ncore::run_daily_checkin(pool, http, &task.account_name, task.account_id, task.user_id, &config)
                         .await
                 }
                 Err(err) => TaskOutcome {

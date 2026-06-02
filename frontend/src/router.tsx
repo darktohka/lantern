@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 import { Button } from "./components/ui/button";
 import { useAuth } from "./lib/auth";
 import { AccountsPage } from "./routes/accounts";
+import { AlertsPage } from "./routes/alerts";
 import { InvitesPage } from "./routes/invites";
 import { LoginPage } from "./routes/login";
 import { LogsPage } from "./routes/logs";
@@ -40,6 +41,7 @@ function AppShell() {
               <NavLink to="/accounts">Accounts</NavLink>
               <NavLink to="/torrents">Torrents</NavLink>
               <NavLink to="/invites">Invites</NavLink>
+              <NavLink to="/alerts">Alerts</NavLink>
               <NavLink to="/logs">Logs</NavLink>
             </nav>
             <div className="flex items-center gap-3">
@@ -129,6 +131,16 @@ const torrentsRoute = createRoute({
   ),
 });
 
+const alertsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/alerts",
+  component: () => (
+    <Protected>
+      <AlertsPage />
+    </Protected>
+  ),
+});
+
 const invitesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/invites",
@@ -156,6 +168,7 @@ const routeTree = rootRoute.addChildren([
   accountsRoute,
   torrentsRoute,
   invitesRoute,
+  alertsRoute,
   logsRoute,
 ]);
 

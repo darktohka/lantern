@@ -4,12 +4,14 @@ use tracing::{info, warn};
 
 use crate::models::{NcoreConfig, TaskOutcome};
 use crate::timeutil::{now, to_sql_timestamp};
+use crate::torrent;
 
 pub async fn run_daily_checkin(
     pool: &SqlitePool,
     http: &Client,
     account_name: &str,
     account_id: i64,
+    user_id: i64,
     config: &NcoreConfig,
 ) -> TaskOutcome {
     let base_url = config.base_url.trim_end_matches('/');
@@ -43,7 +45,7 @@ pub async fn run_daily_checkin(
         "nCore cookies stored successfully"
     );
 
-    match perform_checkin(http, base_url, &cookies).await {
+    let outcome = match perform_checkin(http, base_url, &cookies).await {
         Ok(msg) => TaskOutcome {
             success: true,
             message: format!("nCore: {}: {}", account_name, msg),
@@ -55,7 +57,13 @@ pub async fn run_daily_checkin(
                 account_name, err
             ),
         },
+    };
+
+    if let Err(err) = torrent::process_hitnrun_torrents(pool, http, base_url, &cookies, account_id, user_id, account_name).await {
+        warn!(error = %err, account_name, "failed to refresh torrent list after checkin");
     }
+
+    outcome
 }
 
 async fn login(
@@ -151,3 +159,4 @@ async fn perform_checkin(
         Ok("daily check-in completed (logged-in status uncertain)".to_string())
     }
 }
+
