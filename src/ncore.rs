@@ -4,11 +4,12 @@ use tracing::{info, warn};
 
 use crate::models::{NcoreConfig, TaskOutcome};
 use crate::timeutil::{now, to_sql_timestamp};
-use crate::torrent;
+use crate::torrent::{self, TorrentKeepalive};
 
 pub async fn run_daily_checkin(
     pool: &SqlitePool,
     http: &Client,
+    torrents: &TorrentKeepalive,
     account_name: &str,
     account_id: i64,
     user_id: i64,
@@ -61,6 +62,10 @@ pub async fn run_daily_checkin(
 
     if let Err(err) = torrent::process_hitnrun_torrents(pool, http, base_url, &cookies, account_id, user_id, account_name).await {
         warn!(error = %err, account_name, "failed to refresh torrent list after checkin");
+    }
+
+    if let Err(err) = torrent::auto_remove_completed(torrents).await {
+        warn!(error = %err, account_name, "failed to auto-remove completed torrents after checkin");
     }
 
     outcome

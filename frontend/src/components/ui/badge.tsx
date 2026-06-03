@@ -2,13 +2,14 @@ import type { HTMLAttributes } from "react";
 
 import { cn } from "../../lib/utils";
 
-type BadgeVariant = "default" | "secondary" | "success" | "destructive";
+type BadgeVariant = "default" | "secondary" | "success" | "destructive" | "info";
 
 const variants: Record<BadgeVariant, string> = {
   default: "bg-primary text-primary-foreground",
   secondary: "bg-muted text-foreground",
   success: "bg-emerald-700 text-white",
   destructive: "bg-destructive text-destructive-foreground",
+  info: "bg-blue-600 text-white",
 };
 
 export function Badge({

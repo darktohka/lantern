@@ -265,7 +265,28 @@ export function AccountsPage() {
           <CardHeader>
             <CardTitle>{form.editingId ? "Edit account" : "Add account"}</CardTitle>
             <CardDescription>
-              Hoyoverse: check-in at 00:00 UTC+8. nCore: check-in between 10:00-14:00 Hungarian time.
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border text-left text-muted-foreground">
+                    <th className="pb-1 pr-2 font-medium">Task</th>
+                    <th className="pb-1 font-medium">Cadence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-border/50">
+                    <td className="py-1 pr-2">Hoyoverse Daily Check-in</td>
+                    <td className="py-1">00:00 UTC+8 daily</td>
+                  </tr>
+                  <tr className="border-b border-border/50">
+                    <td className="py-1 pr-2">nCore Daily Check-in</td>
+                    <td className="py-1">10:00-14:00 Hungarian time daily</td>
+                  </tr>
+                  <tr>
+                    <td className="py-1 pr-2">nCore Torrent Refresh</td>
+                    <td className="py-1">Every 12h (every 3h on last day of month)</td>
+                  </tr>
+                </tbody>
+              </table>
             </CardDescription>
           </CardHeader>
           <CardContent>

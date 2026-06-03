@@ -1,4 +1,4 @@
-import { Bell, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Bell, Plus, RefreshCw, Send, Trash2 } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 
 import { Badge } from "../components/ui/badge";
@@ -12,25 +12,39 @@ import {
 } from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { Select } from "../components/ui/select";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatDateTime } from "../lib/utils";
+
+type NtfyAlertAuth =
+  | { type: "anonymous" }
+  | { type: "basic"; username: string; password: string }
+  | { type: "bearer"; token: string };
 
 type NtfyAlert = {
   id: number;
   name: string;
   topic: string;
+  auth: NtfyAlertAuth;
   created_at: string;
 };
+
+const defaultAuth: NtfyAlertAuth = { type: "anonymous" };
 
 export function AlertsPage() {
   const { token } = useAuth();
   const [alerts, setAlerts] = useState<NtfyAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [topic, setTopic] = useState("");
+  const [authType, setAuthType] = useState<"anonymous" | "basic" | "bearer">("anonymous");
+  const [authUsername, setAuthUsername] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authToken, setAuthToken] = useState("");
 
   async function loadAlerts() {
     if (!token) return;
@@ -52,6 +66,21 @@ export function AlertsPage() {
   function resetForm() {
     setName("");
     setTopic("");
+    setAuthType("anonymous");
+    setAuthUsername("");
+    setAuthPassword("");
+    setAuthToken("");
+  }
+
+  function buildAuth(): NtfyAlertAuth {
+    switch (authType) {
+      case "anonymous":
+        return { type: "anonymous" };
+      case "basic":
+        return { type: "basic", username: authUsername, password: authPassword };
+      case "bearer":
+        return { type: "bearer", token: authToken };
+    }
   }
 
   async function submitForm(event: FormEvent) {
@@ -63,7 +92,7 @@ export function AlertsPage() {
     try {
       await apiFetch<NtfyAlert>("/api/ntfy-alerts", token, {
         method: "POST",
-        body: JSON.stringify({ name, topic }),
+        body: JSON.stringify({ name, topic, auth: buildAuth() }),
       });
       resetForm();
       await loadAlerts();
@@ -89,6 +118,39 @@ export function AlertsPage() {
     }
   }
 
+  async function testAlert(alert: NtfyAlert) {
+    if (!token) return;
+    setTesting((prev) => new Set(prev).add(alert.id));
+    setError(null);
+    try {
+      const result = await apiFetch<{ message: string }>(
+        `/api/ntfy-alerts/${alert.id}/test`,
+        token,
+        { method: "POST" },
+      );
+      window.alert(result.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Test failed");
+    } finally {
+      setTesting((prev) => {
+        const next = new Set(prev);
+        next.delete(alert.id);
+        return next;
+      });
+    }
+  }
+
+  function authLabel(auth: NtfyAlertAuth): string {
+    switch (auth.type) {
+      case "anonymous":
+        return "No auth";
+      case "basic":
+        return "Basic auth";
+      case "bearer":
+        return "Bearer token";
+    }
+  }
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -110,7 +172,7 @@ export function AlertsPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[420px_1fr]">
         <Card>
           <CardHeader>
             <CardTitle>Add alert</CardTitle>
@@ -131,7 +193,7 @@ export function AlertsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="alert-topic">Topic</Label>
+                <Label htmlFor="alert-topic">Topic / URL</Label>
                 <Input
                   id="alert-topic"
                   value={topic}
@@ -143,6 +205,56 @@ export function AlertsPage() {
                   A plain topic name (e.g. my_alerts) or a full ntfy URL.
                 </p>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="alert-auth-type">Authentication</Label>
+                <Select
+                  id="alert-auth-type"
+                  value={authType}
+                  onChange={(event) => setAuthType(event.target.value as "anonymous" | "basic" | "bearer")}
+                >
+                  <option value="anonymous">None (anonymous)</option>
+                  <option value="basic">Username &amp; password</option>
+                  <option value="bearer">Access token</option>
+                </Select>
+              </div>
+
+              {authType === "basic" ? (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="auth-username">Username</Label>
+                    <Input
+                      id="auth-username"
+                      value={authUsername}
+                      onChange={(event) => setAuthUsername(event.target.value)}
+                      placeholder="ntfy user"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="auth-password">Password</Label>
+                    <Input
+                      id="auth-password"
+                      type="password"
+                      value={authPassword}
+                      onChange={(event) => setAuthPassword(event.target.value)}
+                      placeholder="********"
+                      autoComplete="off"
+                    />
+                  </div>
+                </>
+              ) : authType === "bearer" ? (
+                <div className="space-y-2">
+                  <Label htmlFor="auth-token">Token</Label>
+                  <Input
+                    id="auth-token"
+                    value={authToken}
+                    onChange={(event) => setAuthToken(event.target.value)}
+                    placeholder="tk_AgQdq7mVBoFD37zQVN29RhuMzNIz2"
+                    autoComplete="off"
+                  />
+                </div>
+              ) : null}
+
               <Button disabled={saving}>
                 <Plus className="h-4 w-4" />
                 {saving ? "Adding..." : "Add alert"}
@@ -169,6 +281,7 @@ export function AlertsPage() {
                       <Bell className="h-4 w-4 text-primary" />
                       <CardTitle className="truncate">{alert.name}</CardTitle>
                       <Badge variant="secondary">ntfy</Badge>
+                      <Badge variant="secondary">{authLabel(alert.auth)}</Badge>
                     </div>
                     <CardDescription className="mt-1">
                       Topic: <span className="font-mono text-xs">{alert.topic}</span>
@@ -177,14 +290,25 @@ export function AlertsPage() {
                       Created {formatDateTime(alert.created_at)}
                     </CardDescription>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => void deleteAlert(alert)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    <span className="sr-only">Delete</span>
-                  </Button>
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={testing.has(alert.id)}
+                      onClick={() => void testAlert(alert)}
+                    >
+                      <Send className="h-3 w-3" />
+                      {testing.has(alert.id) ? "Sending..." : "Test"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => void deleteAlert(alert)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">Delete</span>
+                    </Button>
+                  </div>
                 </CardHeader>
               </Card>
             ))

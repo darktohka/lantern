@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use chrono::{Datelike, Duration as ChronoDuration, Utc};
 use irontide::prelude::*;
 use rand::Rng;
 use reqwest::Client;
@@ -15,6 +16,8 @@ use crate::timeutil::{now, to_sql_timestamp};
 
 const HITNRUN_INTERVAL: Duration = Duration::from_secs(12 * 3600);
 const HITNRUN_JITTER: Duration = Duration::from_secs(10 * 60);
+const HITNRUN_INTERVAL_LAST_DAY: Duration = Duration::from_secs(3 * 3600);
+const HITNRUN_JITTER_LAST_DAY: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Clone)]
 pub struct TorrentKeepalive {
@@ -59,6 +62,31 @@ pub struct TorrentResponse {
     pub updated_at: String,
 }
 
+fn is_last_day_of_month_hu() -> bool {
+    let offset = hungarian_offset_seconds();
+    let hu_now = Utc::now() + ChronoDuration::seconds(offset);
+    let tomorrow = hu_now + ChronoDuration::days(1);
+    hu_now.month() != tomorrow.month()
+}
+
+fn hungarian_offset_seconds() -> i64 {
+    let now = Utc::now();
+    let year = now.year();
+    let dst_start = crate::scheduler::last_sunday_of_month(year, 3)
+        .and_hms_opt(1, 0, 0)
+        .unwrap()
+        .and_utc();
+    let dst_end = crate::scheduler::last_sunday_of_month(year, 10)
+        .and_hms_opt(1, 0, 0)
+        .unwrap()
+        .and_utc();
+    if now >= dst_start && now < dst_end {
+        7200
+    } else {
+        3600
+    }
+}
+
 pub async fn run_keepalive(k: TorrentKeepalive) {
     if let Err(err) = ensure_session(&k).await {
         warn!(error = %err, "initial session setup failed");
@@ -70,8 +98,13 @@ pub async fn run_keepalive(k: TorrentKeepalive) {
             if let Err(err) = hitnrun_tick(&hitnrun_k).await {
                 error!(error = %err, "hitnrun tick failed");
             }
-            let jitter = rand::thread_rng().gen_range(Duration::ZERO..=HITNRUN_JITTER);
-            sleep(HITNRUN_INTERVAL + jitter).await;
+            let (interval, jitter) = if is_last_day_of_month_hu() {
+                (HITNRUN_INTERVAL_LAST_DAY, HITNRUN_JITTER_LAST_DAY)
+            } else {
+                (HITNRUN_INTERVAL, HITNRUN_JITTER)
+            };
+            let jitter = rand::thread_rng().gen_range(Duration::ZERO..=jitter);
+            sleep(interval + jitter).await;
         }
     });
 
@@ -100,10 +133,27 @@ async fn hitnrun_tick(k: &TorrentKeepalive) -> anyhow::Result<()> {
         }
     }
 
+    auto_remove_completed(k).await?;
+
     if let Err(err) = ensure_session(k).await {
         warn!(error = %err, "session refresh after hitnrun failed");
     }
 
+    Ok(())
+}
+
+pub(crate) async fn auto_remove_completed(k: &TorrentKeepalive) -> anyhow::Result<()> {
+    let completed = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT id, account_id FROM ncore_torrents WHERE status = 'complete'",
+    )
+    .fetch_all(&k.db)
+    .await?;
+    for (torrent_id, account_id) in completed {
+        info!(torrent_id, "auto-removing completed torrent");
+        if let Err(err) = remove_torrent(k, torrent_id, account_id).await {
+            warn!(torrent_id, error = %err, "failed to auto-remove completed torrent");
+        }
+    }
     Ok(())
 }
 
@@ -116,7 +166,8 @@ async fn process_account(
 ) -> anyhow::Result<()> {
     let base_url = config.base_url.trim_end_matches('/');
     let cookies = login(base_url, &config.username, &config.password).await?;
-    process_hitnrun_torrents(&k.db, &k.http, base_url, &cookies, account_id, user_id, account_name).await
+    let _remove_ids = process_hitnrun_torrents(&k.db, &k.http, base_url, &cookies, account_id, user_id, account_name).await?;
+    Ok(())
 }
 
 pub(crate) async fn process_hitnrun_torrents(
@@ -127,12 +178,13 @@ pub(crate) async fn process_hitnrun_torrents(
     account_id: i64,
     user_id: i64,
     account_name: &str,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<i64>> {
     let started_at = now();
     let torrents = fetch_hitnrun(http, base_url, cookies).await?;
 
     let mut added = Vec::new();
     let mut completed = Vec::new();
+    let mut remove_ids = Vec::new();
 
     for ncore_torrent in &torrents {
         let ncore_id = &ncore_torrent.ncore_id;
@@ -195,6 +247,13 @@ pub(crate) async fn process_hitnrun_torrents(
                 let now_ts = to_sql_timestamp(now());
                 if hnr_timespent.as_deref() == Some("-") && status != "complete" {
                     info!(account_name, ncore_id, name, "torrent completed (remaining = '-')");
+                    let tid: Option<(i64,)> = sqlx::query_as(
+                        "SELECT id FROM ncore_torrents WHERE account_id = ?1 AND ncore_id = ?2",
+                    )
+                    .bind(account_id)
+                    .bind(ncore_id)
+                    .fetch_optional(db)
+                    .await?;
                     sqlx::query(
                         "UPDATE ncore_torrents SET status = 'complete', hnr_timespent = ?1, hnr_seed = ?2, updated_at = ?3 WHERE account_id = ?4 AND ncore_id = ?5",
                     )
@@ -206,6 +265,9 @@ pub(crate) async fn process_hitnrun_torrents(
                     .execute(db)
                     .await?;
                     completed.push(format!("#{} {}", ncore_id, name));
+                    if let Some((tid,)) = tid {
+                        remove_ids.push(tid);
+                    }
                 } else if status == "pending" || status == "downloading" || status == "seeding" {
                     sqlx::query(
                         "UPDATE ncore_torrents SET hnr_timespent = ?1, hnr_seed = ?2, updated_at = ?3 WHERE account_id = ?4 AND ncore_id = ?5",
@@ -255,7 +317,7 @@ pub(crate) async fn process_hitnrun_torrents(
     .execute(db)
     .await?;
 
-    Ok(())
+    Ok(remove_ids)
 }
 
 pub(crate) async fn fetch_hitnrun(

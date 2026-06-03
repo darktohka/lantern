@@ -140,7 +140,7 @@ export function TorrentsPage() {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                  <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border text-left text-muted-foreground">
                       <th className="pb-2 pr-4 font-medium">Name</th>
@@ -148,6 +148,8 @@ export function TorrentsPage() {
                       <th className="pb-2 pr-4 font-medium">Progress</th>
                       <th className="pb-2 pr-4 font-medium">DL</th>
                       <th className="pb-2 pr-4 font-medium">UL</th>
+                      <th className="pb-2 pr-4 font-medium">Total DL</th>
+                      <th className="pb-2 pr-4 font-medium">Total UL</th>
                       <th className="pb-2 pr-4 font-medium">Remaining</th>
                       <th className="pb-2 pr-4 font-medium">Updated</th>
                       <th className="pb-2 font-medium" />
@@ -176,6 +178,12 @@ export function TorrentsPage() {
                           </td>
                           <td className="py-2 pr-4 text-muted-foreground">
                             {formatRate(t.upload_rate)}
+                          </td>
+                          <td className="py-2 pr-4 text-muted-foreground">
+                            {formatBytes(t.total_download)}
+                          </td>
+                          <td className="py-2 pr-4 text-muted-foreground">
+                            {formatBytes(t.total_upload)}
                           </td>
                           <td className="py-2 pr-4 text-muted-foreground">
                             {t.hnr_timespent || "-"}

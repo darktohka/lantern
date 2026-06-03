@@ -1,3 +1,5 @@
+use base64::{Engine, engine::general_purpose::STANDARD};
+use reqwest::header::HeaderValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -149,11 +151,43 @@ pub struct PaginatedLogsResponse {
     pub items: Vec<TaskLogResponse>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum NtfyAlertAuth {
+    #[serde(rename = "anonymous")]
+    Anonymous,
+    #[serde(rename = "basic")]
+    Basic { username: String, password: String },
+    #[serde(rename = "bearer")]
+    Bearer { token: String },
+}
+
+impl NtfyAlertAuth {
+    pub fn apply(&self, headers: &mut reqwest::header::HeaderMap) {
+        match self {
+            NtfyAlertAuth::Anonymous => {}
+            NtfyAlertAuth::Basic { username, password } => {
+                let credentials = format!("{}:{}", username, password);
+                let encoded = STANDARD.encode(credentials.as_bytes());
+                if let Ok(val) = HeaderValue::from_str(&format!("Basic {}", encoded)) {
+                    headers.insert(reqwest::header::AUTHORIZATION, val);
+                }
+            }
+            NtfyAlertAuth::Bearer { token } => {
+                if let Ok(val) = HeaderValue::from_str(&format!("Bearer {}", token)) {
+                    headers.insert(reqwest::header::AUTHORIZATION, val);
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct NtfyAlertResponse {
     pub id: i64,
     pub name: String,
     pub topic: String,
+    pub auth: NtfyAlertAuth,
     pub created_at: String,
 }
 
@@ -161,6 +195,7 @@ pub struct NtfyAlertResponse {
 pub struct CreateNtfyAlertRequest {
     pub name: String,
     pub topic: String,
+    pub auth: Option<NtfyAlertAuth>,
 }
 
 pub fn validate_account_config(service: Service, config: Value) -> Result<Value, String> {

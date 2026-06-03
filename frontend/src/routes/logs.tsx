@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, RefreshCw, ScrollText } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, ScrollText, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "../components/ui/badge";
@@ -60,30 +60,42 @@ export function LogsPage() {
     [logs.total, logs.page_size],
   );
 
-  async function loadLogs(nextPage = page) {
-    if (!token) return;
-    setLoading(true);
-    setError(null);
-    const params = new URLSearchParams({
-      page: String(nextPage),
-      page_size: String(pageSize),
-    });
-    if (accountId !== "all") params.set("account_id", accountId);
-
-    try {
-      const [accountResponse, logResponse] = await Promise.all([
-        apiFetch<Account[]>("/api/accounts", token),
-        apiFetch<LogsResponse>(`/api/task-logs?${params}`, token),
-      ]);
-      setAccounts(accountResponse);
-      setLogs(logResponse);
-      setPage(nextPage);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load logs");
-    } finally {
-      setLoading(false);
+    async function deleteLog(id: number) {
+        if (!token) return;
+        if (!window.confirm("Delete this log entry?")) return;
+        setError(null);
+        try {
+            await apiFetch<void>(`/api/task-logs/${id}`, token, { method: "DELETE" });
+            await loadLogs(page);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to delete log");
+        }
     }
-  }
+
+    async function loadLogs(nextPage = page) {
+        if (!token) return;
+        setLoading(true);
+        setError(null);
+        const params = new URLSearchParams({
+            page: String(nextPage),
+            page_size: String(pageSize),
+        });
+        if (accountId !== "all") params.set("account_id", accountId);
+
+        try {
+            const [accountResponse, logResponse] = await Promise.all([
+                apiFetch<Account[]>("/api/accounts", token),
+                apiFetch<LogsResponse>(`/api/task-logs?${params}`, token),
+            ]);
+            setAccounts(accountResponse);
+            setLogs(logResponse);
+            setPage(nextPage);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to load logs");
+        } finally {
+            setLoading(false);
+        }
+    }
 
   useEffect(() => {
     void loadLogs(1);
@@ -143,7 +155,7 @@ export function LogsPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[860px] border-collapse text-sm">
+                    <table className="w-full min-w-[860px] border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-muted-foreground">
                     <th className="py-3 pr-4 font-medium">Started</th>
@@ -151,7 +163,8 @@ export function LogsPage() {
                     <th className="py-3 pr-4 font-medium">Task</th>
                     <th className="py-3 pr-4 font-medium">Status</th>
                     <th className="py-3 pr-4 font-medium">Duration</th>
-                    <th className="py-3 font-medium">Message</th>
+                    <th className="py-3 pr-4 font-medium">Message</th>
+                    <th className="py-3 font-medium" />
                   </tr>
                 </thead>
                 <tbody>
@@ -170,7 +183,7 @@ export function LogsPage() {
                       </td>
                       <td className="py-3 pr-4">
                         <Badge
-                          variant={log.status === "success" ? "success" : "destructive"}
+                          variant={log.status === "success" ? "success" : log.status === "info" ? "info" : "destructive"}
                         >
                           {log.status}
                         </Badge>
@@ -180,6 +193,16 @@ export function LogsPage() {
                       </td>
                       <td className="max-w-md py-3 text-muted-foreground">
                         {log.message}
+                      </td>
+                      <td className="py-3">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => void deleteLog(log.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span className="sr-only">Delete</span>
+                        </Button>
                       </td>
                     </tr>
                   ))}

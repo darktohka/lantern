@@ -1,11 +1,7 @@
-use sqlx::FromRow;
 use sqlx::SqlitePool;
 use tracing::error;
 
-#[derive(Debug, FromRow)]
-struct NtfyAlertRow {
-    topic: String,
-}
+use crate::models::NtfyAlertAuth;
 
 pub async fn send_ntfy_alerts(
     db: &SqlitePool,
@@ -14,9 +10,9 @@ pub async fn send_ntfy_alerts(
     title: &str,
     message: &str,
 ) {
-    let alerts = match sqlx::query_as::<_, NtfyAlertRow>(
+    let alerts = match sqlx::query_as::<_, (String, String)>(
         r#"
-        SELECT topic
+        SELECT topic, auth_json
         FROM ntfy_alerts
         WHERE user_id = ?1
         "#,
@@ -32,11 +28,13 @@ pub async fn send_ntfy_alerts(
         }
     };
 
-    for alert in &alerts {
-        let topic = alert.topic.trim().to_string();
+    for (topic, auth_json) in &alerts {
+        let topic = topic.trim().to_string();
         if topic.is_empty() {
             continue;
         }
+
+        let auth: NtfyAlertAuth = serde_json::from_str(auth_json).unwrap_or(NtfyAlertAuth::Anonymous);
 
         let url = if topic.contains('/') {
             topic.clone()
@@ -44,10 +42,14 @@ pub async fn send_ntfy_alerts(
             format!("https://ntfy.sh/{}", topic)
         };
 
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("Title", reqwest::header::HeaderValue::from_str(title).unwrap());
+        headers.insert("Tags", reqwest::header::HeaderValue::from_static("warning"));
+        auth.apply(&mut headers);
+
         if let Err(err) = http
             .post(&url)
-            .header("Title", title)
-            .header("Tags", "warning")
+            .headers(headers)
             .body(message.to_string())
             .send()
             .await
@@ -55,4 +57,37 @@ pub async fn send_ntfy_alerts(
             error!(error = %err, topic = %topic, "failed to send ntfy alert");
         }
     }
+}
+
+pub async fn send_test_alert(
+    http: &reqwest::Client,
+    topic: &str,
+    auth: &NtfyAlertAuth,
+) -> Result<String, String> {
+    let url = if topic.contains('/') {
+        topic.to_string()
+    } else {
+        format!("https://ntfy.sh/{}", topic)
+    };
+
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert("Title", reqwest::header::HeaderValue::from_static("Lantern Test"));
+    headers.insert("Tags", reqwest::header::HeaderValue::from_static("white_check_mark"));
+    auth.apply(&mut headers);
+
+    let resp = http
+        .post(&url)
+        .headers(headers)
+        .body("This is a test notification from Lantern.")
+        .send()
+        .await
+        .map_err(|err| format!("request failed: {}", err))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("HTTP {}: {}", status, body));
+    }
+
+    Ok("Test notification sent successfully".to_string())
 }

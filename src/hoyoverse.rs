@@ -138,10 +138,23 @@ impl HoyolabCheckin<'_> {
         Ok(())
     }
 
+    fn is_no_character(err: &str) -> bool {
+        err.contains("No in-game character")
+    }
+
     async fn process_game(&self, game: &Game) -> (bool, String) {
         match self.get_status(game).await {
             Ok(false) => {
                 if let Err(err) = self.sign(game).await {
+                    if Self::is_no_character(&err) {
+                        return (
+                            true,
+                            format!(
+                                "{}: no in-game character for {} (skipped)",
+                                game.name, self.account_name
+                            ),
+                        );
+                    }
                     return (
                         false,
                         format!(
@@ -167,10 +180,21 @@ impl HoyolabCheckin<'_> {
                 }
             }
             Ok(true) => (true, format!("{}: daily check-in already done", game.name)),
-            Err(err) => (
-                false,
-                format!("{}: failed to read check-in status: {}", game.name, err),
-            ),
+            Err(err) => {
+                if Self::is_no_character(&err) {
+                    return (
+                        true,
+                        format!(
+                            "{}: no in-game character for {} (skipped)",
+                            game.name, self.account_name
+                        ),
+                    );
+                }
+                (
+                    false,
+                    format!("{}: failed to read check-in status: {}", game.name, err),
+                )
+            }
         }
     }
 

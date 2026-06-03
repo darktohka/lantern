@@ -12,6 +12,7 @@ use crate::{
     },
     state::AppState,
     timeutil::{now, to_sql_timestamp},
+    torrent::TorrentKeepalive,
 };
 
 #[derive(Debug, FromRow)]
@@ -86,6 +87,7 @@ pub async fn reconcile_account_tasks(
 pub async fn run_task_now(
     pool: &SqlitePool,
     http: &reqwest::Client,
+    torrents: &TorrentKeepalive,
     task_id: i64,
 ) -> anyhow::Result<TaskLogResponse> {
     let task = sqlx::query_as::<_, DueTaskRow>(
@@ -109,7 +111,7 @@ pub async fn run_task_now(
     .ok_or_else(|| anyhow::anyhow!("task not found"))?;
 
     let started_at = now();
-    let log = execute_and_log(pool, http, &task, started_at).await?;
+    let log = execute_and_log(pool, http, torrents, &task, started_at).await?;
     info!(
         task_id = task.task_id,
         account_id = task.account_id,
@@ -122,10 +124,11 @@ pub async fn run_task_now(
 async fn execute_and_log(
     pool: &SqlitePool,
     http: &reqwest::Client,
+    torrents: &TorrentKeepalive,
     task: &DueTaskRow,
     started_at: chrono::DateTime<Utc>,
 ) -> Result<TaskLogResponse, sqlx::Error> {
-    let outcome = run_task_by_type(http, pool, task).await;
+    let outcome = run_task_by_type(http, pool, torrents, task).await;
     let finished_at = now();
     let duration_ms = (finished_at - started_at).num_milliseconds();
     let status = if outcome.success { "success" } else { "failed" };
@@ -209,7 +212,7 @@ fn hungarian_offset_now() -> i64 {
     if now >= dst_start && now < dst_end { 7200 } else { 3600 }
 }
 
-fn last_sunday_of_month(year: i32, month: u32) -> chrono::NaiveDate {
+pub fn last_sunday_of_month(year: i32, month: u32) -> chrono::NaiveDate {
     let mut day = if month == 2 {
         if chrono::NaiveDate::from_ymd_opt(year, month, 29).is_some() { 29 } else { 28 }
     } else if month == 4 || month == 6 || month == 9 || month == 11 {
@@ -330,7 +333,7 @@ async fn execute_task(state: &AppState, task: DueTaskRow) {
         "running scheduled task"
     );
 
-    if let Err(err) = execute_and_log(&state.db, &state.http, &task, started_at).await {
+    if let Err(err) = execute_and_log(&state.db, &state.http, &state.torrents, &task, started_at).await {
         error!(error = %err, task_id = task.task_id, "scheduled task log failed");
     }
 }
@@ -338,6 +341,7 @@ async fn execute_task(state: &AppState, task: DueTaskRow) {
 async fn run_task_by_type(
     http: &reqwest::Client,
     pool: &SqlitePool,
+    torrents: &TorrentKeepalive,
     task: &DueTaskRow,
 ) -> TaskOutcome {
     match task.task_type.as_str() {
@@ -375,7 +379,7 @@ async fn run_task_by_type(
 
             match serde_json::from_str::<NcoreConfig>(&task.config_json) {
                 Ok(config) => {
-                    ncore::run_daily_checkin(pool, http, &task.account_name, task.account_id, task.user_id, &config)
+                    ncore::run_daily_checkin(pool, http, torrents, &task.account_name, task.account_id, task.user_id, &config)
                         .await
                 }
                 Err(err) => TaskOutcome {

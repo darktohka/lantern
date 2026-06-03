@@ -22,9 +22,10 @@ use crate::{
     auth,
     models::{
         AccountResponse, AuthResponse, CreateNtfyAlertRequest, InviteResponse, LoginRequest,
-        NtfyAlertResponse, PaginatedLogsResponse, RegisterRequest, Service, TaskLogResponse,
-        TaskResponse, UpsertAccountRequest, UserPublic, validate_account_config,
+        NtfyAlertAuth, NtfyAlertResponse, PaginatedLogsResponse, RegisterRequest, Service,
+        TaskLogResponse, TaskResponse, UpsertAccountRequest, UserPublic, validate_account_config,
     },
+    notifier,
     scheduler,
     state::AppState,
     timeutil::{now, to_sql_timestamp},
@@ -50,10 +51,12 @@ pub async fn serve(db: sqlx::SqlitePool, bind: String, static_dir: String, torre
         .route("/tasks", get(list_tasks))
         .route("/tasks/{id}/run", post(run_task))
         .route("/task-logs", get(list_task_logs))
+        .route("/task-logs/{id}", delete(delete_task_log))
         .route("/torrents", get(list_torrents))
         .route("/torrents/{id}", delete(delete_torrent))
         .route("/ntfy-alerts", get(list_ntfy_alerts).post(create_ntfy_alert))
-        .route("/ntfy-alerts/{id}", delete(delete_ntfy_alert));
+        .route("/ntfy-alerts/{id}", delete(delete_ntfy_alert))
+        .route("/ntfy-alerts/{id}/test", post(test_ntfy_alert));
 
     let static_path = PathBuf::from(static_dir);
     let index_path = static_path.join("index.html");
@@ -518,7 +521,7 @@ async fn run_task(
         return Err(ApiError::NotFound);
     }
 
-    let log = scheduler::run_task_now(&state.db, &state.http, task_id)
+    let log = scheduler::run_task_now(&state.db, &state.http, &state.torrents, task_id)
         .await
         .map_err(ApiError::Internal)?;
 
@@ -708,6 +711,29 @@ async fn load_tasks(db: &sqlx::SqlitePool, user_id: i64) -> Result<Vec<TaskRespo
     Ok(tasks)
 }
 
+async fn delete_task_log(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, ApiError> {
+    let result = sqlx::query(
+        r#"
+        DELETE FROM execution_logs
+        WHERE id = ?1 AND user_id = ?2
+        "#,
+    )
+    .bind(id)
+    .bind(user.id)
+    .execute(&state.db)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(ApiError::NotFound);
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[derive(Debug, Deserialize)]
 struct TorrentsQuery {
     account_id: Option<i64>,
@@ -850,15 +876,18 @@ struct NtfyAlertRow {
     id: i64,
     name: String,
     topic: String,
+    auth_json: String,
     created_at: String,
 }
 
 impl NtfyAlertRow {
     fn into_response(self) -> NtfyAlertResponse {
+        let auth = serde_json::from_str(&self.auth_json).unwrap_or(NtfyAlertAuth::Anonymous);
         NtfyAlertResponse {
             id: self.id,
             name: self.name,
             topic: self.topic,
+            auth,
             created_at: self.created_at,
         }
     }
@@ -870,7 +899,7 @@ async fn list_ntfy_alerts(
 ) -> Result<Json<Vec<NtfyAlertResponse>>, ApiError> {
     let alerts = sqlx::query_as::<_, NtfyAlertRow>(
         r#"
-        SELECT id, name, topic, created_at
+        SELECT id, name, topic, auth_json, created_at
         FROM ntfy_alerts
         WHERE user_id = ?1
         ORDER BY created_at DESC
@@ -900,16 +929,20 @@ async fn create_ntfy_alert(
         return Err(ApiError::BadRequest("topic is required".to_string()));
     }
 
+    let auth = payload.auth.unwrap_or(NtfyAlertAuth::Anonymous);
+    let auth_json = serde_json::to_string(&auth).map_err(|err| ApiError::BadRequest(err.to_string()))?;
+
     let created_at = to_sql_timestamp(now());
     let result = sqlx::query(
         r#"
-        INSERT INTO ntfy_alerts (user_id, name, topic, created_at)
-        VALUES (?1, ?2, ?3, ?4)
+        INSERT INTO ntfy_alerts (user_id, name, topic, auth_json, created_at)
+        VALUES (?1, ?2, ?3, ?4, ?5)
         "#,
     )
     .bind(user.id)
     .bind(&name)
     .bind(&topic)
+    .bind(&auth_json)
     .bind(&created_at)
     .execute(&state.db)
     .await?;
@@ -918,8 +951,35 @@ async fn create_ntfy_alert(
         id: result.last_insert_rowid(),
         name,
         topic,
+        auth,
         created_at,
     }))
+}
+
+async fn test_ntfy_alert(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let alert = sqlx::query_as::<_, NtfyAlertRow>(
+        r#"
+        SELECT id, name, topic, auth_json, created_at
+        FROM ntfy_alerts
+        WHERE id = ?1 AND user_id = ?2
+        "#,
+    )
+    .bind(id)
+    .bind(user.id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+
+    let auth = serde_json::from_str(&alert.auth_json).unwrap_or(NtfyAlertAuth::Anonymous);
+
+    match notifier::send_test_alert(&state.http, &alert.topic, &auth).await {
+        Ok(msg) => Ok(Json(serde_json::json!({ "message": msg }))),
+        Err(err) => Err(ApiError::BadRequest(err)),
+    }
 }
 
 async fn delete_ntfy_alert(

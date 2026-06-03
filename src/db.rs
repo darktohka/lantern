@@ -156,5 +156,11 @@ pub async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
 
+    let _ = sqlx::raw_sql(
+        "ALTER TABLE ntfy_alerts ADD COLUMN auth_json TEXT NOT NULL DEFAULT '{\"type\":\"anonymous\"}'",
+    )
+    .execute(pool)
+    .await;
+
     Ok(())
 }
