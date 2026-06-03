@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use chrono::{Datelike, Duration as ChronoDuration, Utc};
 use irontide::prelude::*;
-use rand::Rng;
+use rand::RngExt;
 use reqwest::Client;
 use scraper::{Html, Selector};
 use sqlx::SqlitePool;
@@ -103,7 +103,7 @@ pub async fn run_keepalive(k: TorrentKeepalive) {
             } else {
                 (HITNRUN_INTERVAL, HITNRUN_JITTER)
             };
-            let jitter = rand::thread_rng().gen_range(Duration::ZERO..=jitter);
+            let jitter = rand::rng().random_range(Duration::ZERO..=jitter);
             sleep(interval + jitter).await;
         }
     });

@@ -11,12 +11,12 @@ base64 = "0.22"
 chrono = { version = "0.4", features = ["clock", "serde"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 irontide = { git = "https://codeberg.org/darktohka/irontide", branch = "bugfix/last-piece-bytes-left", default-features = false, features = ["crypto-ring"] }
-rand = "0.8"
+rand = "0.10"
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "hickory-dns"], default-features = false }
-scraper = "0.22"
+scraper = "0.27"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite", "macros"], default-features = false }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }

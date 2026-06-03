@@ -1,5 +1,5 @@
 use chrono::{DateTime, Datelike, Duration, NaiveTime, Utc};
-use rand::Rng;
+use rand::RngExt;
 use sqlx::{FromRow, SqlitePool};
 use tokio::time::{Duration as TokioDuration, sleep};
 use tracing::{error, info, warn};
@@ -197,7 +197,7 @@ fn next_hoyoverse_daily_run_next_day(after: DateTime<Utc>) -> DateTime<Utc> {
 }
 
 fn with_hoyoverse_random_delay(base: DateTime<Utc>) -> DateTime<Utc> {
-    let delay_seconds = rand::thread_rng().gen_range(10..=60);
+    let delay_seconds = rand::rng().random_range(10..=60);
     base + Duration::seconds(delay_seconds)
 }
 
@@ -256,7 +256,7 @@ fn next_ncore_daily_run_next_day(after: DateTime<Utc>) -> DateTime<Utc> {
 }
 
 fn with_ncore_random_delay(base: DateTime<Utc>) -> DateTime<Utc> {
-    let delay_seconds = rand::thread_rng().gen_range(0..=14400);
+    let delay_seconds = rand::rng().random_range(0..=14400);
     base + Duration::seconds(delay_seconds)
 }
 
