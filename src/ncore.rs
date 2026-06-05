@@ -52,11 +52,8 @@ pub async fn run_daily_checkin(
             message: format!("nCore: {}: {}", account_name, msg),
         },
         Err(err) => TaskOutcome {
-            success: true,
-            message: format!(
-                "nCore: {}: logged in but check-in may have failed: {}",
-                account_name, err
-            ),
+            success: false,
+            message: format!("nCore: {}: check-in failed: {}", account_name, err),
         },
     };
 
@@ -155,13 +152,10 @@ async fn perform_checkin(
         .await
         .map_err(|err| format!("failed to read response: {}", err))?;
 
-    if body.contains("Kijelentkezés") || body.contains("Kilépés") {
+    if body.contains("Ajánló") {
         Ok("daily check-in successful".to_string())
     } else {
-        warn!(
-            "nCore check-in response did not contain expected logged-in indicators"
-        );
-        Ok("daily check-in completed (logged-in status uncertain)".to_string())
+        Err("daily check-in completed (logged-in status uncertain)".to_string())
     }
 }
 
