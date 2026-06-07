@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use pow_captcha_axum::CaptchaState;
 use sqlx::SqlitePool;
 use tokio::sync::Mutex;
 
@@ -11,10 +12,11 @@ pub struct AppState {
     pub db: SqlitePool,
     pub http: reqwest::Client,
     pub torrents: TorrentKeepalive,
+    pub captcha: CaptchaState,
 }
 
 impl AppState {
-    pub fn new(db: SqlitePool, http: reqwest::Client, output_dir: PathBuf) -> Self {
+    pub async fn new(db: SqlitePool, http: reqwest::Client, output_dir: PathBuf, captcha: CaptchaState) -> Self {
         Self {
             db: db.clone(),
             http: http.clone(),
@@ -24,6 +26,7 @@ impl AppState {
                 session: Arc::new(Mutex::new(None)),
                 output_dir,
             },
+            captcha,
         }
     }
 }

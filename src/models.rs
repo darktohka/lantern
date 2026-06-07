@@ -71,12 +71,14 @@ pub struct RegisterRequest {
     pub username: String,
     pub password: String,
     pub invite_code: String,
+    pub captcha_token: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
+    pub captcha_token: String,
 }
 
 #[derive(Debug, Serialize)]

@@ -32,11 +32,15 @@ use crate::{
     torrent::{TorrentResponse, self},
 };
 
+use pow_captcha_axum::{captcha_router, CaptchaConfig, CaptchaState};
+
 pub async fn serve(db: sqlx::SqlitePool, bind: String, static_dir: String, torrent_dir: String) -> anyhow::Result<()> {
     let http = reqwest::Client::new();
     let torrent_dir = std::path::PathBuf::from(torrent_dir);
     tokio::fs::create_dir_all(&torrent_dir).await?;
-    let state = AppState::new(db, http, torrent_dir);
+
+    let captcha_state = CaptchaState::new(db.clone(), CaptchaConfig::default());
+    let state = AppState::new(db, http, torrent_dir, captcha_state.clone()).await;
 
     let api = Router::new()
         .route("/health", get(health))
@@ -64,10 +68,11 @@ pub async fn serve(db: sqlx::SqlitePool, bind: String, static_dir: String, torre
 
     let app = Router::new()
         .nest("/api", api)
+        .with_state(state.clone())
+        .nest("/api/captcha", captcha_router(captcha_state))
         .fallback_service(static_service)
         .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
-        .with_state(state.clone());
+        .layer(TraceLayer::new_for_http());
 
     let scheduler_state = state.clone();
     let scheduler_handle = tokio::spawn(async move {
@@ -194,8 +199,11 @@ async fn health() -> Json<HealthResponse> {
 
 async fn register(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, ApiError> {
+    verify_captcha(&state.captcha, &payload.captcha_token, &headers).await?;
+
     auth::validate_username(&payload.username)
         .map_err(|err| ApiError::BadRequest(err.to_string()))?;
     auth::validate_password(&payload.password)
@@ -272,8 +280,11 @@ async fn register(
 
 async fn login(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, ApiError> {
+    verify_captcha(&state.captcha, &payload.captcha_token, &headers).await?;
+
     let user = auth::authenticate_user(&state.db, &payload.username, &payload.password)
         .await?
         .ok_or(ApiError::Unauthorized)?;
@@ -1012,6 +1023,23 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
         .to_str()
         .ok()?
         .strip_prefix("Bearer ")
+}
+
+async fn verify_captcha(
+    captcha: &CaptchaState,
+    token: &str,
+    headers: &HeaderMap,
+) -> Result<(), ApiError> {
+    let valid = captcha
+        .consume_token(token, headers)
+        .await
+        .map_err(|_| ApiError::BadRequest("captcha verification failed".to_string()))?;
+
+    if !valid {
+        return Err(ApiError::BadRequest("captcha verification failed".to_string()));
+    }
+
+    Ok(())
 }
 
 fn map_database_insert_error(err: sqlx::Error) -> ApiError {

@@ -26,11 +26,12 @@ type AuthContextValue = {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, captchaToken: string) => Promise<void>;
   register: (
     username: string,
     password: string,
     inviteCode: string,
+    captchaToken: string,
   ) => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -75,10 +76,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [token]);
 
-  const login = useCallback(async (username: string, password: string) => {
+  const login = useCallback(async (username: string, password: string, captchaToken: string) => {
     const response = await apiFetch<AuthResponse>("/api/auth/login", null, {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, captcha_token: captchaToken }),
     });
     localStorage.setItem(TOKEN_KEY, response.token);
     setToken(response.token);
@@ -86,13 +87,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(
-    async (username: string, password: string, inviteCode: string) => {
+    async (username: string, password: string, inviteCode: string, captchaToken: string) => {
       const response = await apiFetch<AuthResponse>("/api/auth/register", null, {
         method: "POST",
         body: JSON.stringify({
           username,
           password,
           invite_code: inviteCode,
+          captcha_token: captchaToken,
         }),
       });
       localStorage.setItem(TOKEN_KEY, response.token);

@@ -1,6 +1,7 @@
 import { Link, Navigate } from "@tanstack/react-router";
 import { Flame } from "lucide-react";
 import { FormEvent, useState } from "react";
+import { useCaptcha } from "pow-captcha-react";
 
 import { Button } from "../components/ui/button";
 import {
@@ -20,16 +21,25 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const {
+    captchaToken,
+    solvingCaptcha,
+    captchaError,
+    consumeCaptchaToken,
+  } = useCaptcha({ endpoint: "/api/captcha/" });
 
   if (user) return <Navigate to="/accounts" />;
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
+    const token = consumeCaptchaToken();
+    if (!token) return;
+
     setSubmitting(true);
     setError(null);
 
     try {
-      await login(username, password);
+      await login(username, password, token);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -70,13 +80,13 @@ export function LoginPage() {
                 required
               />
             </div>
-            {error ? (
+            {error || captchaError ? (
               <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {error}
+                {error ?? captchaError}
               </p>
             ) : null}
-            <Button className="w-full" disabled={submitting}>
-              {submitting ? "Signing in..." : "Sign in"}
+            <Button className="w-full" disabled={submitting || solvingCaptcha || !captchaToken}>
+              {solvingCaptcha ? "Verifying browser..." : submitting ? "Signing in..." : "Sign in"}
             </Button>
           </form>
           <p className="mt-4 text-sm text-muted-foreground">

@@ -162,5 +162,7 @@ pub async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
     .execute(pool)
     .await;
 
+    pow_captcha_axum::run_migrations(pool).await?;
+
     Ok(())
 }
