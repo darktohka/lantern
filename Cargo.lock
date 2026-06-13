@@ -83,6 +83,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "arc-swap"
+version = "1.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a3a1fd6f75306b68087b831f025c712524bcb19aad54e557b1129cfa0a2b207"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "argon2"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -347,9 +356,9 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
 name = "bitflags"
-version = "2.12.1"
+version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84d7ced0ae9557296835c32bf1b1e02b44c746701f898460fb000d7eaa84f00a"
+checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 dependencies = [
  "serde_core",
 ]
@@ -374,9 +383,9 @@ dependencies = [
 
 [[package]]
 name = "block-buffer"
-version = "0.12.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdd35008169921d80bc60d3d0ab416eecb028c4cd653352907921d95084790be"
+checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
 dependencies = [
  "hybrid-array",
 ]
@@ -423,9 +432,9 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
 name = "cc"
-version = "1.2.63"
+version = "1.2.64"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "556e016178bb5662a08681bbe0f00f8e17631781a4dfc8c45e466e4b185ec27f"
+checksum = "dad887fd958be91b5098c0248def011f4523ab786cd411be668777e55063501f"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -785,7 +794,7 @@ version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
 dependencies = [
- "block-buffer 0.12.0",
+ "block-buffer 0.12.1",
  "const-oid 0.10.2",
  "crypto-common 0.2.2",
  "ctutils",
@@ -1265,9 +1274,9 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "hashlink"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea0b22561a9c04a7cb1a302c013e0259cd3b4bb619f145b32f72b8b4bcbed230"
+checksum = "824e001ac4f3012dd16a264bec811403a67ca9deb6c102fc5049b32c4574b35f"
 dependencies = [
  "hashbrown 0.16.1",
 ]
@@ -1366,9 +1375,9 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "1.4.1"
+version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8be7462df143984c4598a256ef469b251d7d7f9e271135073e78fc535414f3d0"
+checksum = "6970f50e31d6fc17d3fa27329444bfa74e196cf62e95052a3f6fee181dba6425"
 dependencies = [
  "bytes",
  "itoa",
@@ -1672,9 +1681,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ipnetwork"
+version = "0.21.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf370abdafd54d13e54a620e8c3e1145f28e46cc9d704bc6d94414559df41763"
+
+[[package]]
 name = "irontide"
-version = "1.0.1"
-source = "git+https://codeberg.org/darktohka/irontide?branch=bugfix%2Flast-piece-bytes-left#01c507b387af7b0c006c2712019df4e004f0e10a"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0a5268e0f2df919ceb03ede3c0d14598ff8f6a29c5f5624d261e0649abf570d"
 dependencies = [
  "ed25519-dalek",
  "irontide-bencode",
@@ -1691,8 +1707,9 @@ dependencies = [
 
 [[package]]
 name = "irontide-bencode"
-version = "1.0.1"
-source = "git+https://codeberg.org/darktohka/irontide?branch=bugfix%2Flast-piece-bytes-left#01c507b387af7b0c006c2712019df4e004f0e10a"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bc9fa1e121c29ca99921a0c2a4fc15bc8db6d87f452210748defa2c17e32b9a"
 dependencies = [
  "serde",
  "serde_bytes",
@@ -1701,10 +1718,12 @@ dependencies = [
 
 [[package]]
 name = "irontide-core"
-version = "1.0.1"
-source = "git+https://codeberg.org/darktohka/irontide?branch=bugfix%2Flast-piece-bytes-left#01c507b387af7b0c006c2712019df4e004f0e10a"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "396936a24af6e4d20f0831550acdfbc77fe8931cba0c37446fb619e944cfd1ce"
 dependencies = [
  "aws-lc-rs",
+ "bitflags",
  "bytes",
  "data-encoding",
  "hex",
@@ -1718,8 +1737,9 @@ dependencies = [
 
 [[package]]
 name = "irontide-dht"
-version = "1.0.1"
-source = "git+https://codeberg.org/darktohka/irontide?branch=bugfix%2Flast-piece-bytes-left#01c507b387af7b0c006c2712019df4e004f0e10a"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a92c603ae4b4b0c953c527e427d8bdcf9fc6a98a9df97532e923845e099b30f"
 dependencies = [
  "bytes",
  "dashmap",
@@ -1737,9 +1757,75 @@ dependencies = [
 ]
 
 [[package]]
+name = "irontide-engine"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc74011d583505f11b126fc63f1dfb459cfbf9479d1e455a6977c69fbfcb3d16"
+dependencies = [
+ "async-trait",
+ "bitflags",
+ "bytes",
+ "dashmap",
+ "futures",
+ "hex",
+ "ipnet",
+ "irontide-bencode",
+ "irontide-core",
+ "irontide-dht",
+ "irontide-engine-support",
+ "irontide-nat",
+ "irontide-peer-io",
+ "irontide-session-types",
+ "irontide-settings",
+ "irontide-storage",
+ "irontide-tracker",
+ "irontide-utp",
+ "irontide-wire",
+ "libc",
+ "parking_lot",
+ "rand_core 0.6.4",
+ "reqwest",
+ "rustc-hash",
+ "rustls",
+ "serde",
+ "serde_bytes",
+ "slab",
+ "smallvec",
+ "socket2 0.5.10",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "irontide-engine-support"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "946e6419aced01fc3ecb8f10f8877b2cf53bcaa61db73f3fe5f6163901477942"
+dependencies = [
+ "irontide-core",
+ "irontide-dht",
+ "irontide-peer-io",
+ "irontide-settings",
+ "irontide-storage",
+ "irontide-tracker",
+ "irontide-utp",
+ "irontide-wire",
+ "serde",
+ "serde_bytes",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "irontide-nat"
-version = "1.0.1"
-source = "git+https://codeberg.org/darktohka/irontide?branch=bugfix%2Flast-piece-bytes-left#01c507b387af7b0c006c2712019df4e004f0e10a"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f36be1a8c268ca7ca1ac182f1290753c0311b7c40298f1bce46da0f4c0ef408"
 dependencies = [
  "irontide-core",
  "thiserror 2.0.18",
@@ -1748,10 +1834,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "irontide-session"
-version = "1.0.1"
-source = "git+https://codeberg.org/darktohka/irontide?branch=bugfix%2Flast-piece-bytes-left#01c507b387af7b0c006c2712019df4e004f0e10a"
+name = "irontide-peer-io"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5dd335fe274b49093890f80e41c179c403cff6064796523bdfe69d2dd6a53a16"
 dependencies = [
+ "bytes",
+ "irontide-wire",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "irontide-session"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb21511f76dcbc0e1c32c087dbeabfcfbda96cf0ede6179482d604c4b18b4222"
+dependencies = [
+ "arc-swap",
  "argon2",
  "async-trait",
  "bitflags",
@@ -1764,12 +1864,19 @@ dependencies = [
  "irontide-bencode",
  "irontide-core",
  "irontide-dht",
+ "irontide-engine",
+ "irontide-engine-support",
  "irontide-nat",
+ "irontide-peer-io",
+ "irontide-session-core",
+ "irontide-session-types",
+ "irontide-settings",
  "irontide-storage",
  "irontide-tracker",
  "irontide-utp",
  "irontide-wire",
  "libc",
+ "maxminddb",
  "notify-debouncer-full",
  "notify-rust",
  "parking_lot",
@@ -1794,9 +1901,94 @@ dependencies = [
 ]
 
 [[package]]
+name = "irontide-session-core"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5bd7162f0ceff4c2788c0785b307ce21aaa19e256cac4c00c704e4df5aadc3cb"
+dependencies = [
+ "argon2",
+ "async-trait",
+ "bitflags",
+ "bytes",
+ "dashmap",
+ "directories",
+ "futures",
+ "hex",
+ "ipnet",
+ "irontide-bencode",
+ "irontide-core",
+ "irontide-dht",
+ "irontide-engine",
+ "irontide-engine-support",
+ "irontide-nat",
+ "irontide-peer-io",
+ "irontide-session-types",
+ "irontide-settings",
+ "irontide-storage",
+ "irontide-tracker",
+ "irontide-utp",
+ "irontide-wire",
+ "libc",
+ "notify-rust",
+ "parking_lot",
+ "rand_core 0.6.4",
+ "reqwest",
+ "rustc-hash",
+ "rustls",
+ "serde",
+ "serde_bytes",
+ "slab",
+ "smallvec",
+ "socket2 0.5.10",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "toml",
+ "tracing",
+ "url",
+ "zeroize",
+]
+
+[[package]]
+name = "irontide-session-types"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bc10d9759c856e1ba0a5fc3953bd40453ba49b567a2d21c902f4e6235931fc8"
+dependencies = [
+ "bitflags",
+ "bytes",
+ "irontide-core",
+ "irontide-settings",
+ "irontide-storage",
+ "irontide-wire",
+ "parking_lot",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "irontide-settings"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "602dbacfbcc96f7362d4f20a532d23ca74d2135e2999823c25d6ced7b0bb695a"
+dependencies = [
+ "argon2",
+ "ipnet",
+ "irontide-core",
+ "irontide-wire",
+ "rand_core 0.6.4",
+ "serde",
+ "thiserror 2.0.18",
+ "zeroize",
+]
+
+[[package]]
 name = "irontide-storage"
-version = "1.0.1"
-source = "git+https://codeberg.org/darktohka/irontide?branch=bugfix%2Flast-piece-bytes-left#01c507b387af7b0c006c2712019df4e004f0e10a"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3209ff4c0e5d4f378a31d5a7466029a8f1d99cfd81029089697ab6daf6a85382"
 dependencies = [
  "irontide-core",
  "libc",
@@ -1811,8 +2003,9 @@ dependencies = [
 
 [[package]]
 name = "irontide-tracker"
-version = "1.0.1"
-source = "git+https://codeberg.org/darktohka/irontide?branch=bugfix%2Flast-piece-bytes-left#01c507b387af7b0c006c2712019df4e004f0e10a"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d48e0f44857d856e19bfc284e429b87375bea2c403fe7a4d440caff54ed58d79"
 dependencies = [
  "bytes",
  "irontide-bencode",
@@ -1829,8 +2022,9 @@ dependencies = [
 
 [[package]]
 name = "irontide-utp"
-version = "1.0.1"
-source = "git+https://codeberg.org/darktohka/irontide?branch=bugfix%2Flast-piece-bytes-left#01c507b387af7b0c006c2712019df4e004f0e10a"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88250f78eba84211af6fb9ea878ed92a9193caabbcbdcf0ba53101b85f5abd32"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1843,8 +2037,9 @@ dependencies = [
 
 [[package]]
 name = "irontide-wire"
-version = "1.0.1"
-source = "git+https://codeberg.org/darktohka/irontide?branch=bugfix%2Flast-piece-bytes-left#01c507b387af7b0c006c2712019df4e004f0e10a"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "499b5f92d51b4f4f41c7cb636ecd068d6337ef836bfc0f4ed73963b245232ae8"
 dependencies = [
  "bytes",
  "irontide-bencode",
@@ -1887,13 +2082,12 @@ dependencies = [
 
 [[package]]
 name = "js-sys"
-version = "0.3.99"
+version = "0.3.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "142bc4740e452c1e57ade0cbc129f139c9093e354346f0872ef985f4f5cf5f11"
+checksum = "03d04c30968dffe80775bd4d7fb676131cd04a1fb46d2686dbffbaec2d9dfd31"
 dependencies = [
  "cfg-if",
  "futures-util",
- "once_cell",
  "wasm-bindgen",
 ]
 
@@ -2016,14 +2210,16 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "mac-notification-sys"
-version = "0.6.12"
+version = "0.6.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29a16783dd1a47849b8c8133c9cd3eb2112cfbc6901670af3dba47c8bbfb07d3"
+checksum = "04fd0110fd05744c3c904acf1a8ca624a721d75a35638f127cd5fb6b7ccfb1bf"
 dependencies = [
  "cc",
+ "log",
  "objc2",
  "objc2-foundation",
  "time",
+ "uuid",
 ]
 
 [[package]]
@@ -2053,6 +2249,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
+name = "maxminddb"
+version = "0.28.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "faf6467428ad055b71e588bcedcbaf2ff605b3251deb0c52be4a04b674c546dd"
+dependencies = [
+ "ipnetwork",
+ "log",
+ "memchr",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "md-5"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2064,9 +2273,9 @@ dependencies = [
 
 [[package]]
 name = "memchr"
-version = "2.8.1"
+version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
+checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 
 [[package]]
 name = "memmap2"
@@ -2729,9 +2938,9 @@ dependencies = [
 
 [[package]]
 name = "regex-syntax"
-version = "0.8.10"
+version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
+checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "reqwest"
@@ -3121,9 +3330,9 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smallvec"
-version = "1.15.1"
+version = "1.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 dependencies = [
  "serde",
 ]
@@ -3919,9 +4128,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.23.2"
+version = "1.23.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d258b83ceec21034727ecee8c382cfa6c3e133699b0742c64571814fb420c9f7"
+checksum = "144d6b123cef80b301b8f72a9e2ca4370ddec21950d0a103dd22c437006d2db7"
 dependencies = [
  "getrandom 0.4.2",
  "js-sys",
@@ -3974,9 +4183,9 @@ checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
 name = "wasip2"
-version = "1.0.3+wasi-0.2.9"
+version = "1.0.4+wasi-0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20064672db26d7cdc89c7798c48a0fdfac8213434a1186e5ef29fd560ae223d6"
+checksum = "b67efb37e106e55ce722a510d6b5f9c17f083e5fc79afc2badeb12cc313d9487"
 dependencies = [
  "wit-bindgen 0.57.1",
 ]
@@ -3992,9 +4201,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen"
-version = "0.2.122"
+version = "0.2.125"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ed04576f974d2b2fba0f38c51dbc5518011e38c36bf1143164be765528fd409"
+checksum = "8ddb3f79143bced6de84270411622a2699cee572fc0875aeaf1e7867cf9fca1a"
 dependencies = [
  "cfg-if",
  "once_cell",
@@ -4005,9 +4214,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-futures"
-version = "0.4.72"
+version = "0.4.75"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9473dbd2991ae90b6291c3c32c30c6187ac49aa32f9905d1cce280ec1e110b0f"
+checksum = "503b14d284f2c8dac03b819967e155ea753f573586193b2b2c95990cb5d69280"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
@@ -4015,9 +4224,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro"
-version = "0.2.122"
+version = "0.2.125"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "916151b09da36bd82f6615cbf3a419e2f0ba23a03c6160e8e92eb6bd4aa1dec6"
+checksum = "4e21a184b13fb19e157296e2c46056aec9092264fab83e4ba59e68c61b323c3d"
 dependencies = [
  "quote",
  "wasm-bindgen-macro-support",
@@ -4025,9 +4234,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro-support"
-version = "0.2.122"
+version = "0.2.125"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "299047362ccbfce148b67ab7e73349f77748e00c8296f9542adfad2ad82c5c5e"
+checksum = "fecefd9c35bd935a20fc3fc344b5f29138961e4f47fb03297d88f2587afb5ebd"
 dependencies = [
  "bumpalo",
  "proc-macro2",
@@ -4038,9 +4247,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-shared"
-version = "0.2.122"
+version = "0.2.125"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a929b2c61f11ba3e9bc35b50c1f25cb38e0e892c0c231ae2b8cf78d5dad4437"
+checksum = "23939e44bb9a5d7576fa2b563dc2e136628f1224e88a8deed09e04858b77871f"
 dependencies = [
  "unicode-ident",
 ]
@@ -4081,9 +4290,9 @@ dependencies = [
 
 [[package]]
 name = "web-sys"
-version = "0.3.99"
+version = "0.3.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d621441cfc37b84979402712047321980c178f299193a3589d05b99e8763436"
+checksum = "a6430a72df5eb332242960fe84b3002a241163998241eb596d4f739b9757061d"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
@@ -4744,18 +4953,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.50"
+version = "0.8.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b065d4f0e55f82fae73202e189638116a87c55ab6b8e6c2721e13dd9d854ad1"
+checksum = "ce1022995ff5ff5d841ad7d994facc23098cd40152f2c1d11cd607c6f530653f"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.50"
+version = "0.8.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b631b19d36a892ab55420c92dbc83ccd79274f25be714855d3074aa71cab639"
+checksum = "1ae7f38b72ec2a254e2b87ef277cf2cd4fb97cbebf944faa6f33354da0867930"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4785,18 +4994,18 @@ dependencies = [
 
 [[package]]
 name = "zeroize"
-version = "1.8.2"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b97154e67e32c85465826e8bcc1c59429aaaf107c1e4a9e53c8d8ccd5eff88d0"
+checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
 dependencies = [
  "zeroize_derive",
 ]
 
 [[package]]
 name = "zeroize_derive"
-version = "1.4.3"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85a5b4158499876c763cb03bc4e49185d3cccbabb15b33c627f7884f43db852e"
+checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
 dependencies = [
  "proc-macro2",
  "quote",

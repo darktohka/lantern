@@ -10,7 +10,7 @@ axum = { version = "0.8", features = ["macros"] }
 base64 = "0.22"
 chrono = { version = "0.4", features = ["clock", "serde"] }
 clap = { version = "4.5", features = ["derive", "env"] }
-irontide = { git = "https://codeberg.org/darktohka/irontide", branch = "bugfix/last-piece-bytes-left", default-features = false, features = ["crypto-ring"] }
+irontide = { version = "1", default-features = false, features = ["crypto-ring"] }
 rand = "0.10"
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "hickory-dns"], default-features = false }
 scraper = "0.27"
