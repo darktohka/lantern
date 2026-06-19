@@ -413,6 +413,6 @@ async fn next_sleep_duration(pool: &SqlitePool) -> anyhow::Result<TokioDuration>
     };
 
     let parsed = DateTime::parse_from_rfc3339(&next_run_at)?.with_timezone(&Utc);
-    let seconds = (parsed - now()).num_seconds().clamp(1, 60) as u64;
+    let seconds = (parsed - now()).num_seconds().clamp(1, 3600) as u64;
     Ok(TokioDuration::from_secs(seconds))
 }

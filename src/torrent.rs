@@ -497,7 +497,7 @@ async fn alert_listener(k: &TorrentKeepalive) {
         };
 
         let Some(mut rx) = rx else {
-            sleep(Duration::from_secs(1)).await;
+            sleep(Duration::from_secs(30)).await;
             continue;
         };
 
