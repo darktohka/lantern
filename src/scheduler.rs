@@ -5,7 +5,7 @@ use tokio::time::{Duration as TokioDuration, sleep};
 use tracing::{error, info, warn};
 
 use crate::{
-    hoyoverse, ncore, notifier,
+    checker, hoyoverse, ncore, notifier,
     models::{
         HoyoverseConfig, NcoreConfig, Service, TaskLogResponse, TaskOutcome,
         TASK_HOYOVERSE_DAILY_CHECKIN, TASK_NCORE_DAILY_CHECKIN,
@@ -30,6 +30,10 @@ pub async fn run(state: AppState) {
     loop {
         if let Err(err) = run_due_tasks(&state).await {
             error!(error = %err, "scheduler tick failed");
+        }
+
+        if let Err(err) = checker::run_due(&state).await {
+            error!(error = %err, "checker tick failed");
         }
 
         let sleep_for = next_sleep_duration(&state.db).await.unwrap_or_else(|err| {
@@ -398,11 +402,17 @@ async fn run_task_by_type(
 async fn next_sleep_duration(pool: &SqlitePool) -> anyhow::Result<TokioDuration> {
     let (next_run_at,): (Option<String>,) = sqlx::query_as(
         r#"
-        SELECT MIN(t.next_run_at)
-        FROM account_tasks t
-        JOIN accounts a ON a.id = t.account_id
-        WHERE t.enabled = 1
-          AND a.enabled = 1
+        SELECT MIN(next_run) FROM (
+            SELECT t.next_run_at AS next_run
+            FROM account_tasks t
+            JOIN accounts a ON a.id = t.account_id
+            WHERE t.enabled = 1
+              AND a.enabled = 1
+            UNION ALL
+            SELECT c.next_run_at AS next_run
+            FROM checkers c
+            WHERE c.enabled = 1
+        )
         "#,
     )
     .fetch_one(pool)

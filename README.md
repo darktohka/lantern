@@ -117,3 +117,8 @@ LANTERN_STATIC_DIR=frontend/dist ./target/release-lto/lantern serve
 | GET | `/api/task-logs` | Paginated execution logs |
 | GET/DELETE | `/api/torrents` | List / remove torrents |
 | GET/POST/DELETE | `/api/ntfy-alerts` | Manage ntfy.sh alert targets |
+| GET/POST | `/api/checkers` | List / create web checkers |
+| PUT/DELETE | `/api/checkers/{id}` | Update / delete a checker |
+| POST | `/api/checkers/{id}/run` | Run a checker manually |
+| GET | `/api/checkers/{id}/diff` | Previous vs current content |
+| GET | `/api/checkers/{id}/results` | Paginated checker run history |

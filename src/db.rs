@@ -162,6 +162,51 @@ pub async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
     .execute(pool)
     .await;
 
+    sqlx::raw_sql(
+        r#"
+        CREATE TABLE IF NOT EXISTS checkers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            url TEXT NOT NULL,
+            check_type TEXT NOT NULL,
+            interval_seconds INTEGER NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            config_json TEXT NOT NULL DEFAULT '{}',
+            next_run_at TEXT NOT NULL,
+            last_run_at TEXT,
+            previous_status_code INTEGER,
+            last_status_code INTEGER,
+            content_hash TEXT,
+            previous_content TEXT,
+            current_content TEXT,
+            last_changed_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_checkers_user_id ON checkers(user_id);
+        CREATE INDEX IF NOT EXISTS idx_checkers_next_run ON checkers(enabled, next_run_at);
+
+        CREATE TABLE IF NOT EXISTS checker_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            checker_id INTEGER NOT NULL REFERENCES checkers(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            status_code INTEGER,
+            status_changed INTEGER NOT NULL DEFAULT 0,
+            content_changed INTEGER NOT NULL DEFAULT 0,
+            triggered INTEGER NOT NULL DEFAULT 0,
+            message TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            finished_at TEXT NOT NULL,
+            duration_ms INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_checker_results_checker
+            ON checker_results(checker_id, started_at DESC);
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
     pow_captcha_axum::run_migrations(pool).await?;
 
     Ok(())

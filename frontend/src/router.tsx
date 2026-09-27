@@ -14,6 +14,7 @@ import { Button } from "./components/ui/button";
 import { useAuth } from "./lib/auth";
 import { AccountsPage } from "./routes/accounts";
 import { AlertsPage } from "./routes/alerts";
+import { CheckersPage } from "./routes/checkers";
 import { InvitesPage } from "./routes/invites";
 import { LoginPage } from "./routes/login";
 import { LogsPage } from "./routes/logs";
@@ -39,6 +40,7 @@ function AppShell() {
             </Link>
             <nav className="flex flex-1 items-center gap-1 overflow-x-auto px-2">
               <NavLink to="/accounts">Accounts</NavLink>
+              <NavLink to="/checkers">Checkers</NavLink>
               <NavLink to="/torrents">Torrents</NavLink>
               <NavLink to="/invites">Invites</NavLink>
               <NavLink to="/alerts">Alerts</NavLink>
@@ -121,6 +123,16 @@ const accountsRoute = createRoute({
   ),
 });
 
+const checkersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/checkers",
+  component: () => (
+    <Protected>
+      <CheckersPage />
+    </Protected>
+  ),
+});
+
 const torrentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/torrents",
@@ -166,6 +178,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   registerRoute,
   accountsRoute,
+  checkersRoute,
   torrentsRoute,
   invitesRoute,
   alertsRoute,

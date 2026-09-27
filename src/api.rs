@@ -19,11 +19,14 @@ use tower_http::{
 use tracing::{error, info};
 
 use crate::{
-    auth,
+    auth, checker,
     models::{
-        AccountResponse, AuthResponse, CreateNtfyAlertRequest, InviteResponse, LoginRequest,
-        NtfyAlertAuth, NtfyAlertResponse, PaginatedLogsResponse, RegisterRequest, Service,
-        TaskLogResponse, TaskResponse, UpsertAccountRequest, UserPublic, validate_account_config,
+        AccountResponse, AuthResponse, CheckerDiffResponse, CheckerResponse,
+        CheckerResultResponse, CheckType, CreateNtfyAlertRequest, InviteResponse, LoginRequest,
+        NtfyAlertAuth, NtfyAlertResponse, PaginatedCheckerResultsResponse, PaginatedLogsResponse,
+        RegisterRequest, Service, TaskLogResponse, TaskResponse, UpsertAccountRequest,
+        UpsertCheckerRequest, UserPublic, validate_account_config, validate_checker_config,
+        validate_checker_url,
     },
     notifier,
     scheduler,
@@ -60,7 +63,12 @@ pub async fn serve(db: sqlx::SqlitePool, bind: String, static_dir: String, torre
         .route("/torrents/{id}", delete(delete_torrent))
         .route("/ntfy-alerts", get(list_ntfy_alerts).post(create_ntfy_alert))
         .route("/ntfy-alerts/{id}", delete(delete_ntfy_alert))
-        .route("/ntfy-alerts/{id}/test", post(test_ntfy_alert));
+        .route("/ntfy-alerts/{id}/test", post(test_ntfy_alert))
+        .route("/checkers", get(list_checkers).post(create_checker))
+        .route("/checkers/{id}", put(update_checker).delete(delete_checker))
+        .route("/checkers/{id}/run", post(run_checker))
+        .route("/checkers/{id}/diff", get(get_checker_diff))
+        .route("/checkers/{id}/results", get(list_checker_results));
 
     let static_path = PathBuf::from(static_dir);
     let index_path = static_path.join("index.html");
@@ -1179,4 +1187,412 @@ impl TaskLogRow {
             message: self.message,
         }
     }
+}
+
+#[derive(Debug, FromRow)]
+struct CheckerRow {
+    id: i64,
+    name: String,
+    url: String,
+    check_type: String,
+    interval_seconds: i64,
+    enabled: i64,
+    config_json: String,
+    next_run_at: String,
+    last_run_at: Option<String>,
+    previous_status_code: Option<i64>,
+    last_status_code: Option<i64>,
+    last_changed_at: Option<String>,
+    previous_content: Option<String>,
+    current_content: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+impl CheckerRow {
+    fn into_response(self) -> Result<CheckerResponse, ApiError> {
+        let has_previous_content = self.previous_content.is_some();
+        let has_current_content = self.current_content.is_some();
+
+        Ok(CheckerResponse {
+            id: self.id,
+            name: self.name,
+            url: self.url,
+            check_type: self.check_type,
+            interval_seconds: self.interval_seconds,
+            enabled: self.enabled != 0,
+            config: serde_json::from_str(&self.config_json)
+                .map_err(|err| ApiError::Internal(err.into()))?,
+            next_run_at: self.next_run_at,
+            last_run_at: self.last_run_at,
+            previous_status_code: self.previous_status_code,
+            last_status_code: self.last_status_code,
+            last_changed_at: self.last_changed_at,
+            has_previous_content,
+            has_current_content,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        })
+    }
+}
+
+#[derive(Debug, FromRow)]
+struct CheckerResultRow {
+    id: i64,
+    checker_id: i64,
+    status_code: Option<i64>,
+    status_changed: i64,
+    content_changed: i64,
+    triggered: i64,
+    message: String,
+    started_at: String,
+    finished_at: String,
+    duration_ms: i64,
+}
+
+impl CheckerResultRow {
+    fn into_response(self) -> CheckerResultResponse {
+        CheckerResultResponse {
+            id: self.id,
+            checker_id: self.checker_id,
+            status_code: self.status_code,
+            status_changed: self.status_changed != 0,
+            content_changed: self.content_changed != 0,
+            triggered: self.triggered != 0,
+            message: self.message,
+            started_at: self.started_at,
+            finished_at: self.finished_at,
+            duration_ms: self.duration_ms,
+        }
+    }
+}
+
+struct NormalizedCheckerPayload {
+    name: String,
+    url: String,
+    check_type: CheckType,
+    interval_seconds: i64,
+    enabled: bool,
+    config: Value,
+}
+
+fn normalize_checker_payload(
+    payload: UpsertCheckerRequest,
+) -> Result<NormalizedCheckerPayload, ApiError> {
+    let name = payload.name.trim().to_string();
+    if name.is_empty() {
+        return Err(ApiError::BadRequest("checker name is required".to_string()));
+    }
+
+    let url = validate_checker_url(&payload.url).map_err(ApiError::BadRequest)?;
+
+    if !(60..=604800).contains(&payload.interval_seconds) {
+        return Err(ApiError::BadRequest(
+            "interval_seconds must be between 60 and 604800".to_string(),
+        ));
+    }
+
+    let config = if payload.config.is_null() {
+        json!({})
+    } else {
+        payload.config
+    };
+    let config =
+        validate_checker_config(payload.check_type, config).map_err(ApiError::BadRequest)?;
+
+    Ok(NormalizedCheckerPayload {
+        name,
+        url,
+        check_type: payload.check_type,
+        interval_seconds: payload.interval_seconds,
+        enabled: payload.enabled,
+        config,
+    })
+}
+
+async fn list_checkers(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> Result<Json<Vec<CheckerResponse>>, ApiError> {
+    Ok(Json(load_checkers(&state.db, user.id).await?))
+}
+
+async fn create_checker(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(payload): Json<UpsertCheckerRequest>,
+) -> Result<Json<CheckerResponse>, ApiError> {
+    let payload = normalize_checker_payload(payload)?;
+    let current = now();
+    let next_run_at = current + chrono::Duration::seconds(payload.interval_seconds);
+    let timestamp = to_sql_timestamp(current);
+
+    let result = sqlx::query(
+        r#"
+        INSERT INTO checkers
+            (user_id, name, url, check_type, interval_seconds, enabled, config_json,
+             next_run_at, created_at, updated_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
+        "#,
+    )
+    .bind(user.id)
+    .bind(&payload.name)
+    .bind(&payload.url)
+    .bind(payload.check_type.as_str())
+    .bind(payload.interval_seconds)
+    .bind(i64::from(payload.enabled))
+    .bind(payload.config.to_string())
+    .bind(to_sql_timestamp(next_run_at))
+    .bind(&timestamp)
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(
+        load_checker(&state.db, user.id, result.last_insert_rowid()).await?,
+    ))
+}
+
+async fn update_checker(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(checker_id): Path<i64>,
+    Json(payload): Json<UpsertCheckerRequest>,
+) -> Result<Json<CheckerResponse>, ApiError> {
+    let payload = normalize_checker_payload(payload)?;
+    let current = now();
+    let next_run_at = current + chrono::Duration::seconds(payload.interval_seconds);
+    let timestamp = to_sql_timestamp(current);
+
+    let result = sqlx::query(
+        r#"
+        UPDATE checkers
+        SET name = ?1,
+            url = ?2,
+            check_type = ?3,
+            interval_seconds = ?4,
+            enabled = ?5,
+            config_json = ?6,
+            next_run_at = ?7,
+            updated_at = ?8
+        WHERE id = ?9
+          AND user_id = ?10
+        "#,
+    )
+    .bind(&payload.name)
+    .bind(&payload.url)
+    .bind(payload.check_type.as_str())
+    .bind(payload.interval_seconds)
+    .bind(i64::from(payload.enabled))
+    .bind(payload.config.to_string())
+    .bind(to_sql_timestamp(next_run_at))
+    .bind(&timestamp)
+    .bind(checker_id)
+    .bind(user.id)
+    .execute(&state.db)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(ApiError::NotFound);
+    }
+
+    Ok(Json(load_checker(&state.db, user.id, checker_id).await?))
+}
+
+async fn delete_checker(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(checker_id): Path<i64>,
+) -> Result<StatusCode, ApiError> {
+    let result = sqlx::query(
+        r#"
+        DELETE FROM checkers
+        WHERE id = ?1
+          AND user_id = ?2
+        "#,
+    )
+    .bind(checker_id)
+    .bind(user.id)
+    .execute(&state.db)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(ApiError::NotFound);
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn run_checker(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(checker_id): Path<i64>,
+) -> Result<Json<CheckerResultResponse>, ApiError> {
+    let owner: (i64,) = sqlx::query_as("SELECT user_id FROM checkers WHERE id = ?1")
+        .bind(checker_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+
+    if owner.0 != user.id {
+        return Err(ApiError::NotFound);
+    }
+
+    let result = checker::run_now(&state, checker_id)
+        .await
+        .map_err(ApiError::Internal)?;
+
+    Ok(Json(result))
+}
+
+async fn get_checker_diff(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(checker_id): Path<i64>,
+) -> Result<Json<CheckerDiffResponse>, ApiError> {
+    let checker = load_checker_row(&state.db, user.id, checker_id).await?;
+
+    Ok(Json(CheckerDiffResponse {
+        checker_id: checker.id,
+        check_type: checker.check_type,
+        previous_content: checker.previous_content,
+        current_content: checker.current_content,
+        last_changed_at: checker.last_changed_at,
+        previous_status_code: checker.previous_status_code,
+        last_status_code: checker.last_status_code,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct CheckerResultsQuery {
+    page: Option<u32>,
+    page_size: Option<u32>,
+}
+
+async fn list_checker_results(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(checker_id): Path<i64>,
+    Query(query): Query<CheckerResultsQuery>,
+) -> Result<Json<PaginatedCheckerResultsResponse>, ApiError> {
+    let owned: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM checkers WHERE id = ?1 AND user_id = ?2")
+            .bind(checker_id)
+            .bind(user.id)
+            .fetch_optional(&state.db)
+            .await?;
+    if owned.is_none() {
+        return Err(ApiError::NotFound);
+    }
+
+    let page = query.page.unwrap_or(1).max(1);
+    let page_size = query.page_size.unwrap_or(20).clamp(1, 100);
+    let offset = i64::from((page - 1) * page_size);
+    let limit = i64::from(page_size);
+
+    let (total,): (i64,) = sqlx::query_as(
+        r#"
+        SELECT COUNT(*)
+        FROM checker_results
+        WHERE user_id = ?1
+          AND checker_id = ?2
+        "#,
+    )
+    .bind(user.id)
+    .bind(checker_id)
+    .fetch_one(&state.db)
+    .await?;
+
+    let items = sqlx::query_as::<_, CheckerResultRow>(
+        r#"
+        SELECT
+            id,
+            checker_id,
+            status_code,
+            status_changed,
+            content_changed,
+            triggered,
+            message,
+            started_at,
+            finished_at,
+            duration_ms
+        FROM checker_results
+        WHERE user_id = ?1
+          AND checker_id = ?2
+        ORDER BY started_at DESC
+        LIMIT ?3 OFFSET ?4
+        "#,
+    )
+    .bind(user.id)
+    .bind(checker_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .map(CheckerResultRow::into_response)
+    .collect();
+
+    Ok(Json(PaginatedCheckerResultsResponse {
+        page,
+        page_size,
+        total,
+        items,
+    }))
+}
+
+async fn load_checkers(
+    db: &sqlx::SqlitePool,
+    user_id: i64,
+) -> Result<Vec<CheckerResponse>, ApiError> {
+    let checkers = sqlx::query_as::<_, CheckerRow>(
+        r#"
+        SELECT
+            id, name, url, check_type, interval_seconds, enabled, config_json,
+            next_run_at, last_run_at, previous_status_code, last_status_code,
+            last_changed_at, previous_content, current_content, created_at, updated_at
+        FROM checkers
+        WHERE user_id = ?1
+        ORDER BY created_at DESC
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(db)
+    .await?;
+
+    checkers.into_iter().map(CheckerRow::into_response).collect()
+}
+
+async fn load_checker_row(
+    db: &sqlx::SqlitePool,
+    user_id: i64,
+    checker_id: i64,
+) -> Result<CheckerRow, ApiError> {
+    let checker = sqlx::query_as::<_, CheckerRow>(
+        r#"
+        SELECT
+            id, name, url, check_type, interval_seconds, enabled, config_json,
+            next_run_at, last_run_at, previous_status_code, last_status_code,
+            last_changed_at, previous_content, current_content, created_at, updated_at
+        FROM checkers
+        WHERE user_id = ?1
+          AND id = ?2
+        "#,
+    )
+    .bind(user_id)
+    .bind(checker_id)
+    .fetch_optional(db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+
+    Ok(checker)
+}
+
+async fn load_checker(
+    db: &sqlx::SqlitePool,
+    user_id: i64,
+    checker_id: i64,
+) -> Result<CheckerResponse, ApiError> {
+    load_checker_row(db, user_id, checker_id)
+        .await?
+        .into_response()
 }

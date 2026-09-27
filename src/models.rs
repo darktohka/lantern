@@ -6,6 +6,9 @@ use serde_json::Value;
 pub const TASK_HOYOVERSE_DAILY_CHECKIN: &str = "hoyoverse_daily_checkin";
 pub const TASK_NCORE_DAILY_CHECKIN: &str = "ncore_daily_checkin";
 
+pub const CHECK_TYPE_CONTENT_CHANGED: &str = "content_changed";
+pub const CHECK_TYPE_STATUS_CODE_CHANGED: &str = "status_code_changed";
+
 #[derive(Debug)]
 pub struct TaskOutcome {
     pub success: bool,
@@ -226,4 +229,184 @@ fn require_non_empty(field: &str, value: &str) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckType {
+    ContentChanged,
+    StatusCodeChanged,
+}
+
+impl CheckType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ContentChanged => CHECK_TYPE_CONTENT_CHANGED,
+            Self::StatusCodeChanged => CHECK_TYPE_STATUS_CODE_CHANGED,
+        }
+    }
+}
+
+impl TryFrom<&str> for CheckType {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            CHECK_TYPE_CONTENT_CHANGED => Ok(Self::ContentChanged),
+            CHECK_TYPE_STATUS_CODE_CHANGED => Ok(Self::StatusCodeChanged),
+            other => Err(format!("unsupported check type '{}'", other)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum StatusAlertMode {
+    #[default]
+    Match,
+    Mismatch,
+    Any,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusCodeConfig {
+    #[serde(default)]
+    pub target_status: Option<u16>,
+    #[serde(default)]
+    pub mode: StatusAlertMode,
+    #[serde(default = "default_alert_on_error")]
+    pub alert_on_error: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContentChangedConfig {
+    #[serde(default)]
+    pub selector: Option<String>,
+    #[serde(default = "default_ignore_whitespace")]
+    pub ignore_whitespace: bool,
+    #[serde(default = "default_alert_on_error")]
+    pub alert_on_error: bool,
+}
+
+fn default_ignore_whitespace() -> bool {
+    true
+}
+
+fn default_alert_on_error() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpsertCheckerRequest {
+    pub name: String,
+    pub url: String,
+    pub check_type: CheckType,
+    pub interval_seconds: i64,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub config: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CheckerResponse {
+    pub id: i64,
+    pub name: String,
+    pub url: String,
+    pub check_type: String,
+    pub interval_seconds: i64,
+    pub enabled: bool,
+    pub config: Value,
+    pub next_run_at: String,
+    pub last_run_at: Option<String>,
+    pub previous_status_code: Option<i64>,
+    pub last_status_code: Option<i64>,
+    pub last_changed_at: Option<String>,
+    pub has_previous_content: bool,
+    pub has_current_content: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CheckerResultResponse {
+    pub id: i64,
+    pub checker_id: i64,
+    pub status_code: Option<i64>,
+    pub status_changed: bool,
+    pub content_changed: bool,
+    pub triggered: bool,
+    pub message: String,
+    pub started_at: String,
+    pub finished_at: String,
+    pub duration_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CheckerDiffResponse {
+    pub checker_id: i64,
+    pub check_type: String,
+    pub previous_content: Option<String>,
+    pub current_content: Option<String>,
+    pub last_changed_at: Option<String>,
+    pub previous_status_code: Option<i64>,
+    pub last_status_code: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PaginatedCheckerResultsResponse {
+    pub page: u32,
+    pub page_size: u32,
+    pub total: i64,
+    pub items: Vec<CheckerResultResponse>,
+}
+
+pub fn validate_checker_config(check_type: CheckType, config: Value) -> Result<Value, String> {
+    match check_type {
+        CheckType::ContentChanged => {
+            let mut parsed: ContentChangedConfig =
+                serde_json::from_value(config).map_err(|err| err.to_string())?;
+
+            if let Some(selector) = parsed.selector.take() {
+                let trimmed = selector.trim();
+                if trimmed.is_empty() {
+                    parsed.selector = None;
+                } else {
+                    scraper::Selector::parse(trimmed)
+                        .map_err(|err| format!("invalid CSS selector: {}", err))?;
+                    parsed.selector = Some(trimmed.to_string());
+                }
+            }
+
+            serde_json::to_value(parsed).map_err(|err| err.to_string())
+        }
+        CheckType::StatusCodeChanged => {
+            let parsed: StatusCodeConfig =
+                serde_json::from_value(config).map_err(|err| err.to_string())?;
+
+            if let Some(target_status) = parsed.target_status {
+                if !(100..=599).contains(&target_status) {
+                    return Err("target_status must be between 100 and 599".to_string());
+                }
+            }
+
+            serde_json::to_value(parsed).map_err(|err| err.to_string())
+        }
+    }
+}
+
+pub fn validate_checker_url(url: &str) -> Result<String, String> {
+    let trimmed = url.trim();
+    let parsed = reqwest::Url::parse(trimmed).map_err(|err| format!("invalid URL: {}", err))?;
+
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("url must use http or https".to_string());
+    }
+
+    match parsed.host_str() {
+        Some(host) if !host.is_empty() => {}
+        _ => return Err("url must include a host".to_string()),
+    }
+
+    Ok(trimmed.to_string())
 }

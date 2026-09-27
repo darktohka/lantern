@@ -1,5 +1,6 @@
 mod api;
 mod auth;
+mod checker;
 mod db;
 mod hoyoverse;
 mod models;
