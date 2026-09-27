@@ -1363,7 +1363,42 @@ async fn update_checker(
     let next_run_at = current + chrono::Duration::seconds(payload.interval_seconds);
     let timestamp = to_sql_timestamp(current);
 
-    let result = sqlx::query(
+    let existing: Option<(String, String, String)> = sqlx::query_as(
+        "SELECT url, check_type, config_json FROM checkers WHERE id = ?1 AND user_id = ?2",
+    )
+    .bind(checker_id)
+    .bind(user.id)
+    .fetch_optional(&state.db)
+    .await?;
+
+    let (existing_url, existing_check_type, existing_config_json) =
+        existing.ok_or(ApiError::NotFound)?;
+
+    let derived_state_changed = existing_url != payload.url
+        || existing_check_type != payload.check_type.as_str()
+        || existing_config_json != payload.config.to_string();
+
+    let update_statement = if derived_state_changed {
+        r#"
+        UPDATE checkers
+        SET name = ?1,
+            url = ?2,
+            check_type = ?3,
+            interval_seconds = ?4,
+            enabled = ?5,
+            config_json = ?6,
+            next_run_at = ?7,
+            updated_at = ?8,
+            content_hash = NULL,
+            previous_content = NULL,
+            current_content = NULL,
+            last_changed_at = NULL,
+            previous_status_code = NULL,
+            last_status_code = NULL
+        WHERE id = ?9
+          AND user_id = ?10
+        "#
+    } else {
         r#"
         UPDATE checkers
         SET name = ?1,
@@ -1376,20 +1411,22 @@ async fn update_checker(
             updated_at = ?8
         WHERE id = ?9
           AND user_id = ?10
-        "#,
-    )
-    .bind(&payload.name)
-    .bind(&payload.url)
-    .bind(payload.check_type.as_str())
-    .bind(payload.interval_seconds)
-    .bind(i64::from(payload.enabled))
-    .bind(payload.config.to_string())
-    .bind(to_sql_timestamp(next_run_at))
-    .bind(&timestamp)
-    .bind(checker_id)
-    .bind(user.id)
-    .execute(&state.db)
-    .await?;
+        "#
+    };
+
+    let result = sqlx::query(update_statement)
+        .bind(&payload.name)
+        .bind(&payload.url)
+        .bind(payload.check_type.as_str())
+        .bind(payload.interval_seconds)
+        .bind(i64::from(payload.enabled))
+        .bind(payload.config.to_string())
+        .bind(to_sql_timestamp(next_run_at))
+        .bind(&timestamp)
+        .bind(checker_id)
+        .bind(user.id)
+        .execute(&state.db)
+        .await?;
 
     if result.rows_affected() == 0 {
         return Err(ApiError::NotFound);

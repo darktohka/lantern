@@ -225,7 +225,7 @@ function Info({ label, value }: { label: string; value: string }) {
       <div className="text-xs uppercase tracking-wide text-muted-foreground">
         {label}
       </div>
-      <div className="truncate text-sm">{value}</div>
+      <div className="text-sm">{value}</div>
     </div>
   );
 }
@@ -701,43 +701,17 @@ export function CheckersPage() {
               return (
                 <Card key={checker.id}>
                   <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Globe className="h-4 w-4 text-primary" />
-                        <CardTitle className="truncate">{checker.name}</CardTitle>
-                        <Badge variant="secondary">
-                          {checkTypeLabel(checker.check_type)}
-                        </Badge>
-                        <Badge
-                          variant={checker.enabled ? "success" : "secondary"}
-                        >
-                          {checker.enabled ? "Enabled" : "Disabled"}
-                        </Badge>
-                      </div>
-                      <CardDescription className="mt-1 break-all font-mono text-xs">
-                        {checker.url}
-                      </CardDescription>
-                      <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
-                        <Info
-                          label="Last status"
-                          value={formatStatusCode(checker.last_status_code)}
-                        />
-                        <Info
-                          label="Schedule"
-                          value={formatInterval(checker.interval_seconds)}
-                        />
-                        <Info
-                          label="Last run"
-                          value={formatDateTime(checker.last_run_at)}
-                        />
-                        <Info
-                          label="Next run"
-                          value={formatDateTime(checker.next_run_at)}
-                        />
-                      </div>
-                      <div className="mt-2 text-xs text-muted-foreground">
-                        Last changed {formatDateTime(checker.last_changed_at)}
-                      </div>
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                      <Globe className="h-4 w-4 text-primary" />
+                      <CardTitle className="truncate">{checker.name}</CardTitle>
+                      <Badge variant="secondary">
+                        {checkTypeLabel(checker.check_type)}
+                      </Badge>
+                      <Badge
+                        variant={checker.enabled ? "success" : "secondary"}
+                      >
+                        {checker.enabled ? "Enabled" : "Disabled"}
+                      </Badge>
                     </div>
                     <div className="flex shrink-0 flex-wrap justify-end gap-1">
                       <Button
@@ -791,6 +765,33 @@ export function CheckersPage() {
                       </Button>
                     </div>
                   </CardHeader>
+
+                  <CardContent>
+                    <CardDescription className="break-all font-mono text-xs">
+                      {checker.url}
+                    </CardDescription>
+                    <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+                      <Info
+                        label="Last status"
+                        value={formatStatusCode(checker.last_status_code)}
+                      />
+                      <Info
+                        label="Schedule"
+                        value={formatInterval(checker.interval_seconds)}
+                      />
+                      <Info
+                        label="Last run"
+                        value={formatDateTime(checker.last_run_at)}
+                      />
+                      <Info
+                        label="Next run"
+                        value={formatDateTime(checker.next_run_at)}
+                      />
+                    </div>
+                    <div className="mt-3 text-xs text-muted-foreground">
+                      Last changed {formatDateTime(checker.last_changed_at)}
+                    </div>
+                  </CardContent>
 
                   {diff?.checkerId === checker.id ? (
                     <CardContent className="border-t border-border pt-4">

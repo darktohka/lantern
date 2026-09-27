@@ -1,3 +1,4 @@
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -19,6 +20,9 @@ use crate::{
 
 const CHECK_TIMEOUT_SECS: u64 = 30;
 const MAX_CONTENT_BYTES: usize = 1_048_576;
+const MAX_REDIRECTS: usize = 5;
+
+static CHECKER_RUN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[derive(Debug, FromRow)]
 struct DueCheckerRow {
@@ -188,6 +192,7 @@ async fn execute_and_log(
     checker: &DueCheckerRow,
     started_at: DateTime<Utc>,
 ) -> anyhow::Result<CheckerResultResponse> {
+    let guard = CHECKER_RUN_LOCK.lock().await;
     let outcome = run_check(state, checker).await;
     let finished_at = now();
     let duration_ms = (finished_at - started_at).num_milliseconds();
@@ -211,6 +216,12 @@ async fn execute_and_log(
                     (None, None, None, None)
                 }
             }
+            Ok(CheckType::StatusCodeChanged) => (
+                None,
+                None,
+                None,
+                outcome.status_changed.then(|| to_sql_timestamp(started_at)),
+            ),
             _ => (None, None, None, None),
         }
     } else {
@@ -268,6 +279,22 @@ async fn execute_and_log(
     .execute(&state.db)
     .await?;
 
+    let _ = sqlx::query(
+        r#"
+        DELETE FROM checker_results
+        WHERE checker_id = ?1
+          AND id NOT IN (
+              SELECT id FROM checker_results
+              WHERE checker_id = ?1
+              ORDER BY started_at DESC, id DESC
+              LIMIT 200
+          )
+        "#,
+    )
+    .bind(checker.id)
+    .execute(&state.db)
+    .await;
+
     let result = CheckerResultResponse {
         id: inserted.last_insert_rowid(),
         checker_id: checker.id,
@@ -280,6 +307,8 @@ async fn execute_and_log(
         finished_at: to_sql_timestamp(finished_at),
         duration_ms,
     };
+
+    drop(guard);
 
     if outcome.triggered {
         notifier::send_ntfy_alerts(
@@ -298,7 +327,7 @@ async fn execute_and_log(
     Ok(result)
 }
 
-async fn run_check(state: &AppState, checker: &DueCheckerRow) -> CheckOutcome {
+async fn run_check(_state: &AppState, checker: &DueCheckerRow) -> CheckOutcome {
     let check_type = match CheckType::try_from(checker.check_type.as_str()) {
         Ok(check_type) => check_type,
         Err(err) => return CheckOutcome::failure(true, err),
@@ -310,25 +339,9 @@ async fn run_check(state: &AppState, checker: &DueCheckerRow) -> CheckOutcome {
     };
     let alert_on_error = config.alert_on_error();
 
-    if let Err(err) = ensure_public_url(&checker.url).await {
-        return CheckOutcome::failure(alert_on_error, err);
-    }
-
-    let mut response = match state
-        .http
-        .get(&checker.url)
-        .timeout(Duration::from_secs(CHECK_TIMEOUT_SECS))
-        .header("User-Agent", "LanternChecker/0.1")
-        .send()
-        .await
-    {
-        Ok(response) => response,
-        Err(err) => {
-            return CheckOutcome::failure(
-                alert_on_error,
-                format!("request failed: {}", err),
-            );
-        }
+    let (_client, mut response) = match fetch_with_redirects(&checker.url).await {
+        Ok(pair) => pair,
+        Err(err) => return CheckOutcome::failure(alert_on_error, err),
     };
 
     let status = response.status().as_u16();
@@ -383,12 +396,13 @@ async fn run_check(state: &AppState, checker: &DueCheckerRow) -> CheckOutcome {
                 }
             };
 
-            let extracted = extract_content(&body, config.selector.as_deref());
+            let extracted = truncate_to_cap(extract_content(&body, config.selector.as_deref()));
             let normalized = if config.ignore_whitespace {
                 normalize_whitespace(&extracted)
             } else {
                 extracted
             };
+            let normalized = truncate_to_cap(normalized);
             let hash = hash_content(&normalized);
             let first_run = checker.content_hash.is_none();
             let content_changed = checker
@@ -472,39 +486,87 @@ fn hash_content(content: &str) -> String {
     STANDARD.encode(hasher.finalize())
 }
 
-async fn ensure_public_url(url: &str) -> Result<(), String> {
-    if private_hosts_allowed() {
-        return Ok(());
-    }
-
-    let parsed = Url::parse(url).map_err(|err| format!("invalid URL: {}", err))?;
-    let host = parsed
-        .host_str()
-        .ok_or_else(|| "url must include a host".to_string())?;
-    let port = parsed
-        .port_or_known_default()
-        .ok_or_else(|| "url must include a port".to_string())?;
-
-    let addresses = tokio::net::lookup_host((host, port))
-        .await
-        .map_err(|err| format!("failed to resolve host: {}", err))?;
-
-    let mut resolved = false;
-    for address in addresses {
-        resolved = true;
-        if is_blocked_ip(address.ip()) {
-            return Err(format!(
-                "refusing to request a private address: {}",
-                address.ip()
-            ));
+fn truncate_to_cap(mut content: String) -> String {
+    if content.len() > MAX_CONTENT_BYTES {
+        let mut end = MAX_CONTENT_BYTES;
+        while end > 0 && !content.is_char_boundary(end) {
+            end -= 1;
         }
+        content.truncate(end);
     }
+    content
+}
 
-    if !resolved {
+async fn resolve_addresses(
+    host: &str,
+    port: u16,
+    enforce_public: bool,
+) -> Result<Vec<SocketAddr>, String> {
+    let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|err| format!("failed to resolve host: {}", err))?
+        .collect();
+    if addrs.is_empty() {
         return Err("host did not resolve to any address".to_string());
     }
+    if enforce_public {
+        for addr in &addrs {
+            if is_blocked_ip(addr.ip()) {
+                return Err(format!(
+                    "refusing to request a private address: {}",
+                    addr.ip()
+                ));
+            }
+        }
+    }
+    Ok(addrs)
+}
 
-    Ok(())
+async fn fetch_with_redirects(
+    raw_url: &str,
+) -> Result<(reqwest::Client, reqwest::Response), String> {
+    let enforce_public = !private_hosts_allowed();
+    let mut current = Url::parse(raw_url).map_err(|err| format!("invalid URL: {}", err))?;
+    for _ in 0..=MAX_REDIRECTS {
+        if !matches!(current.scheme(), "http" | "https") {
+            return Err("url must use http or https".to_string());
+        }
+        let host = current
+            .host_str()
+            .ok_or_else(|| "url must include a host".to_string())?
+            .to_string();
+        let port = current
+            .port_or_known_default()
+            .ok_or_else(|| "url must include a port".to_string())?;
+        let addrs = resolve_addresses(&host, port, enforce_public).await?;
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(CHECK_TIMEOUT_SECS))
+            .resolve_to_addrs(&host, &addrs)
+            .build()
+            .map_err(|err| format!("failed to build http client: {}", err))?;
+        let response = client
+            .get(current.clone())
+            .header("User-Agent", "LanternChecker/0.1")
+            .send()
+            .await
+            .map_err(|err| format!("request failed: {}", err))?;
+        if response.status().is_redirection() {
+            let location = match response.headers().get(reqwest::header::LOCATION) {
+                Some(value) => value
+                    .to_str()
+                    .map_err(|_| "invalid redirect Location header".to_string())?
+                    .to_string(),
+                None => return Ok((client, response)),
+            };
+            current = current
+                .join(&location)
+                .map_err(|err| format!("invalid redirect location: {}", err))?;
+            continue;
+        }
+        return Ok((client, response));
+    }
+    Err("too many redirects".to_string())
 }
 
 fn private_hosts_allowed() -> bool {
@@ -514,16 +576,78 @@ fn private_hosts_allowed() -> bool {
     )
 }
 
-fn is_blocked_ip(ip: std::net::IpAddr) -> bool {
+fn is_blocked_ip(ip: IpAddr) -> bool {
     match ip {
-        std::net::IpAddr::V4(v4) => {
-            v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified()
-        }
-        std::net::IpAddr::V6(v6) => {
+        IpAddr::V4(v4) => is_blocked_ipv4(v4),
+        IpAddr::V6(v6) => {
+            if let Some(mapped) = v6.to_ipv4_mapped() {
+                return is_blocked_ipv4(mapped);
+            }
             v6.is_loopback()
                 || v6.is_unspecified()
                 || v6.is_unique_local()
                 || v6.is_unicast_link_local()
+                || v6.is_multicast()
         }
+    }
+}
+
+fn is_blocked_ipv4(v4: Ipv4Addr) -> bool {
+    let octets = v4.octets();
+    v4.is_loopback()
+        || v4.is_private()
+        || v4.is_link_local()
+        || v4.is_unspecified()
+        || v4.is_broadcast()
+        || v4.is_documentation()
+        || v4.is_multicast()
+        || octets[0] == 0
+        || (octets[0] == 100 && (64..=127).contains(&octets[1]))
+        || (octets[0] == 198 && (octets[1] == 18 || octets[1] == 19))
+        || (octets[0] == 192 && octets[1] == 0 && octets[2] == 0)
+        || octets[0] >= 240
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blocks_private_and_special_ips() {
+        let blocked = [
+            "127.0.0.1",
+            "::1",
+            "10.1.2.3",
+            "169.254.169.254",
+            "100.64.0.1",
+            "198.18.0.1",
+            "240.0.0.1",
+            "::ffff:127.0.0.1",
+            "::ffff:169.254.169.254",
+        ];
+        for raw in blocked {
+            let ip: IpAddr = raw.parse().unwrap();
+            assert!(is_blocked_ip(ip), "expected {raw} to be blocked");
+        }
+
+        let allowed = ["8.8.8.8", "1.1.1.1", "2606:4700:4700::1111"];
+        for raw in allowed {
+            let ip: IpAddr = raw.parse().unwrap();
+            assert!(!is_blocked_ip(ip), "expected {raw} to be allowed");
+        }
+    }
+
+    #[test]
+    fn truncate_to_cap_preserves_char_boundaries() {
+        // Three-byte UTF-8 characters force the cap to land mid-character.
+        let unit = "€";
+        assert_eq!(unit.len(), 3);
+        let repeat = MAX_CONTENT_BYTES / unit.len() + 2;
+        let content = unit.repeat(repeat);
+        assert!(content.len() > MAX_CONTENT_BYTES);
+
+        let truncated = truncate_to_cap(content);
+        assert!(truncated.len() <= MAX_CONTENT_BYTES);
+        assert!(truncated.ends_with(unit));
     }
 }

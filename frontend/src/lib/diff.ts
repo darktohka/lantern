@@ -10,6 +10,11 @@ export function lineDiff(before: string, after: string): DiffLine[] {
   const n = a.length;
   const m = b.length;
 
+  // Guard against pathological content: the DP table below is O(n*m) memory.
+  if (n * m > 4_000_000) {
+    return [{ type: "same", text: "Content is too large to diff." }];
+  }
+
   // dp[i][j] = length of the LCS of a[i..] and b[j..].
   const dp: number[][] = Array.from({ length: n + 1 }, () =>
     new Array<number>(m + 1).fill(0),

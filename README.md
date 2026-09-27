@@ -83,6 +83,7 @@ All configuration is via environment variables.
 | `LANTERN_BIND` | `0.0.0.0:3000` | HTTP listen address |
 | `LANTERN_STATIC_DIR` | `frontend/dist` | Path to built frontend files |
 | `LANTERN_TORRENT_DIR` | `/data/torrents` | Torrent download directory |
+| `LANTERN_CHECKER_ALLOW_PRIVATE` | unset | Allow web checkers to fetch loopback/private addresses (disables SSRF protection; use only on trusted networks) |
 | `RUST_LOG` | `lantern=info,tower_http=info` | Logging filter |
 
 ## Building from source

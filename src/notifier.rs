@@ -43,7 +43,9 @@ pub async fn send_ntfy_alerts(
         };
 
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("Title", reqwest::header::HeaderValue::from_str(title).unwrap());
+        let title_value = reqwest::header::HeaderValue::from_str(title)
+            .unwrap_or_else(|_| reqwest::header::HeaderValue::from_static("Lantern alert"));
+        headers.insert("Title", title_value);
         headers.insert("Tags", reqwest::header::HeaderValue::from_static("warning"));
         auth.apply(&mut headers);
 
