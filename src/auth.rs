@@ -1,8 +1,5 @@
 use anyhow::{Context, bail};
-use argon2::{
-    Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
-    password_hash::{SaltString, rand_core::OsRng},
-};
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Duration;
 use rand::Rng;
@@ -177,9 +174,8 @@ pub fn hash_token(token: &str) -> String {
 }
 
 pub(crate) fn hash_password(password: &str) -> anyhow::Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
     Ok(Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map_err(|err| anyhow::anyhow!(err.to_string()))?
         .to_string())
 }
